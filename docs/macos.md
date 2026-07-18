@@ -88,6 +88,7 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | 按住 RB + A / B / Y / Menu | Approve / Decline / Fast / Dispatch 当前没有可验证回执，显示 Unavailable |
 | RT + A | 与 RB + X 相同的 F17 Fork 路径，仍不报告 Codex 已完成 |
 | RT + X / Y / 按住 B 3 秒 | Steer / Queue / Stop 当前没有可验证回执，显示 Unavailable；B 的三秒门槛仍在核心层生效 |
+| LB + RB | 未定义组合，直接拒绝；必须同时松开两肩键后才恢复 |
 
 断连、桥接关闭或前台切换会暂停会话；重新接管前必须让按钮、摇杆和扳机回中，避免连接瞬间误触。LT 录音期间切走前台后，应用保留清理责任；返回 Codex 时会优先尝试结束听写。
 

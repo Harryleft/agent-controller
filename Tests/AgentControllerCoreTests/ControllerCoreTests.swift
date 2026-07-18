@@ -181,6 +181,39 @@ final class ControllerMappingEngineTests: XCTestCase {
         )
     }
 
+    func testSimultaneousShouldersFailClosedUntilBothRelease() {
+        var engine = activeEngine()
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.leftShoulder, .rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.leftShoulder, .rightShoulder, .dpadUp, .x]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.3),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder, .x]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.4),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.5),
+            []
+        )
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2.2),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder, .x]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2.3),
+            [.command(.fork)]
+        )
+    }
+
     func testCommandPushToTalkStopsWhenViewOrShoulderIsReleased() {
         var engine = activeEngine()
 

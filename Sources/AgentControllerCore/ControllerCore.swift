@@ -328,6 +328,7 @@ public struct ControllerMappingEngine: Sendable {
     private var rightShoulderPressedAt: TimeInterval?
     private var leftShoulderLayerActive = false
     private var rightShoulderLayerActive = false
+    private var suppressShouldersUntilRelease = false
     private var commandApprovalPressedAt: TimeInterval?
     private var commandApprovalEmitted = false
     private var actionPanelActive = false
@@ -623,6 +624,30 @@ public struct ControllerMappingEngine: Sendable {
         let leftHeld = snapshot.buttons.contains(.leftShoulder)
         let rightHeld = snapshot.buttons.contains(.rightShoulder)
 
+        if suppressShouldersUntilRelease {
+            if !leftHeld && !rightHeld {
+                suppressShouldersUntilRelease = false
+            }
+            return []
+        }
+
+        // LB+RB has no defined semantic layer. Reject the ambiguous chord and
+        // require both shoulders to be released; never silently prefer Agent
+        // or Command. If RB View owned dictation, release that ownership once.
+        if leftHeld && rightHeld {
+            let cleanup: [ControllerAction] = commandPushToTalkActive
+                ? [.command(.stopPushToTalk)] : []
+            commandPushToTalkActive = false
+            leftShoulderPressedAt = nil
+            rightShoulderPressedAt = nil
+            leftShoulderLayerActive = false
+            rightShoulderLayerActive = false
+            commandApprovalPressedAt = nil
+            commandApprovalEmitted = false
+            suppressShouldersUntilRelease = true
+            return cleanup
+        }
+
         if pressed(.leftShoulder, in: snapshot) {
             leftShoulderPressedAt = now
             leftShoulderLayerActive = false
@@ -860,6 +885,7 @@ public struct ControllerMappingEngine: Sendable {
         rightShoulderPressedAt = nil
         leftShoulderLayerActive = false
         rightShoulderLayerActive = false
+        suppressShouldersUntilRelease = false
         commandApprovalPressedAt = nil
         commandApprovalEmitted = false
         actionPanelActive = false
