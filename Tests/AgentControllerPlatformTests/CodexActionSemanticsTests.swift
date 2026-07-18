@@ -133,7 +133,7 @@ final class CodexActionSemanticsTests: XCTestCase {
     }
 
     func testClosedRequestCatalogContainsExactlyTheDocumentedActions() {
-        XCTAssertEqual(CodexActionRequest.allCases.count, 14)
+        XCTAssertEqual(CodexActionRequest.allCases.count, 15)
         XCTAssertEqual(
             Set(CodexActionRequest.allCases.map { String(describing: $0) }).count,
             CodexActionRequest.allCases.count

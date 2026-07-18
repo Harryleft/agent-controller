@@ -14,6 +14,7 @@ public enum CodexActionPanelAction: CaseIterable, Equatable, Sendable {
 
 /// The closed set of actions exposed while holding RB.
 public enum CodexCommandAction: CaseIterable, Equatable, Sendable {
+    case toggleFast
     case approve
     case decline
     case fork

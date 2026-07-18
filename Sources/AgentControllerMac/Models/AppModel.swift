@@ -1030,11 +1030,12 @@ private extension ActionPanelIntent {
 private extension CommandIntent {
     var codexCommandAction: CodexCommandAction? {
         switch self {
+        case .toggleFast: .toggleFast
         case .approve: .approve
         case .decline: .decline
         case .fork: .fork
         case .dispatch: .dispatch
-        case .toggleFast, .startPushToTalk, .stopPushToTalk: nil
+        case .startPushToTalk, .stopPushToTalk: nil
         }
     }
 
