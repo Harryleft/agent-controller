@@ -125,6 +125,32 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 
 关键证据包括 `connected ... xboxProfile=true`、`permission postEvent=true accessibility=true`，以及 `dictation target=recording result=confirmed` / `dictation target=idle result=confirmed`。侧边栏操作应出现 `sidebar operation=select result=selection-confirmed` 或 `sidebar operation=open result=open-confirmed`，其中 `task` 仅为 UUID 派生短哈希。日志中的 `posted` 只表示事件路径执行过，不等于听写或任务打开已确认。
 
+### 无人值守验证与休眠恢复边界
+
+在不接触物理手柄的 CI、离席或开发机验证中，运行：
+
+```bash
+./script/verify_unattended.sh
+```
+
+该入口顺序执行 `swift test`、`./script/build_and_run.sh --verify` 与 `git diff --check`。核心测试已覆盖：600 秒闲置后的状态不合成新按键、断连/重连时按住按钮必须先回中、LT 在断连或关闭 Bridge 时只产生一次停止清理。它们只验证确定性的快照状态机，不能证明 macOS 从物理 Xbox 手柄唤醒后仍会发送通知、TCC 授权仍有效、或 Codex UI 仍接受动作。
+
+需要在用户在场时收集短期运行证据，可使用（默认 30 秒，最多 120 秒）：
+
+```bash
+./script/verify_unattended.sh --collect-logs 30
+```
+
+该收集器不伪造 GameController 输入、不阻止系统休眠、不删除用户数据；只输出设备连接、Bridge phase/权限 gate 与 action result 的摘要。它主动过滤原始输入与 Codex 内容，不读取或保存 prompt/reply。零条记录只表示该时间窗没有观测到合格事件，不能视为物理验收通过。
+
+系统休眠、蓝牙重连、手柄固件与 TCC 都在自动测试边界之外。因此用户回来后，在 5 分钟内用已连接的 Xbox 完成以下清单：
+
+1. 观察应用先进入“等待回中”；先故意按住 A 或 LT，再全部松开，确认没有自动执行动作，回中后才恢复 Active。
+2. 拔掉并重新连接手柄；确认断连期间没有动作，重连后再次要求回中。
+3. 按住 LT 使听写开始后断连或切出 Codex；恢复条件后确认听写被清理，且没有重复停止或遗留录音。
+4. 恢复辅助功能/事件投递与 Codex 麦克风权限后，完成一次 LT 说话、松开、真实转写和停止按钮回读；`posted` 不是成功证据。
+5. 检查短期摘要中有实际的 `connected`、`phase`、权限 gate 与相应 action result；没有这些记录时标注为“未完成物理验收”，不要以自动测试替代。
+
 ## 已知边界
 
 - Codex 改动可访问性名称、角色、窗口结构或焦点行为时，LT 会失效并返回未确认；不得新增模糊匹配或坐标点击来掩盖兼容性破坏。
