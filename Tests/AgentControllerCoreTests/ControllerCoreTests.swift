@@ -62,16 +62,16 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.x]), bridgeEnabled: true, onlyWhenCodexForeground: true, codexIsForeground: true, timestamp: 8), [.submit])
     }
 
-    func testFaceAndNavigationMappingUsesEdges() {
+    func testFaceWorkspaceAndQuestionAnswerMappingsUseEdges() {
         var engine = activeEngine()
         let cases: [(Set<ControllerButton>, ControllerAction)] = [
             ([.a], .openSelected),
             ([.x], .submit),
             ([.rightThumbstick], .openModelPicker),
-            ([.dpadUp], .navigate(.up)),
-            ([.dpadRight], .navigate(.right)),
-            ([.dpadDown], .navigate(.down)),
-            ([.dpadLeft], .navigate(.left))
+            ([.dpadUp], .questionAnswer(.previous)),
+            ([.dpadRight], .workspaceCatalog(.enterProject)),
+            ([.dpadDown], .questionAnswer(.next)),
+            ([.dpadLeft], .workspaceCatalog(.leaveProject))
         ]
 
         var time: TimeInterval = 10
@@ -82,14 +82,16 @@ final class ControllerMappingEngineTests: XCTestCase {
             time += 1
         }
 
-        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.9, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time), [.navigate(.right)])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.9, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time), [.workspaceCatalog(.enterProject)])
         XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.9, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 1), [])
         XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 2), [])
-        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0, 0.9)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 3), [.navigate(.up)])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0, 0.9)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 3), [.workspaceCatalog(.moveSelection(.previous))])
         XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 4), [])
-        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.15, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 5, deadZone: 0.12), [.navigate(.right)])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.15, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 5, deadZone: 0.12), [.workspaceCatalog(.enterProject)])
         XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 6), [])
         XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.15, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 7, deadZone: 0.40), [])
+
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.leftThumbstick]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 8), [.workspaceCatalog(.cycleRoot)])
     }
 
     func testLeftShoulderTapAndHeldAgentLayerAreDistinct() {

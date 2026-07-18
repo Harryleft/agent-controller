@@ -40,6 +40,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var controllerInputLayer: ControllerInputLayer = .base
     @Published private(set) var keybindingStatus = "尚未配置"
     @Published private(set) var lastAction = "等待输入"
+    @Published private(set) var workspaceCatalogAvailable = false
+    @Published private(set) var workspaceSlotStatuses: [ControllerHUDStatus] =
+        Array(repeating: .unknown, count: CodexWorkspaceCatalog.agentSlotLimit)
 
     private enum Keys {
         static let bridgeEnabled = "bridgeEnabled"
@@ -61,6 +64,8 @@ final class AppModel: ObservableObject {
     private var lastDictationCleanupAttempt: TimeInterval = 0
     private var sidebarTask: Task<Void, Never>?
     private var sidebarRevision = 0
+    private var workspaceNavigator = CodexWorkspaceCatalogNavigator()
+    private var lastWorkspaceCatalogRefreshAt: TimeInterval = 0
     private var timer: Timer?
     private var lastPermissionRefreshAt: TimeInterval = 0
     private var lastLoggedPhase: ControllerSessionPhase?
@@ -223,6 +228,9 @@ final class AppModel: ObservableObject {
             mappingEngine.phase != .active ||
             !automation.isCodexForeground {
             clearSidebarSelection()
+            clearWorkspaceSelection()
+        } else if mappingEngine.inputLayer == .agent {
+            refreshWorkspaceCatalogIfNeeded()
         }
 
         for action in actions {
@@ -261,7 +269,32 @@ final class AppModel: ObservableObject {
             requestDictation(recording: false)
             return
         case let .selectSidebarTask(direction):
+            clearWorkspaceSelection()
             requestSidebarSelection(direction: direction)
+            return
+        case let .workspaceCatalog(intent):
+            clearSidebarSelection()
+            performWorkspaceCatalog(intent)
+            return
+        case .openPreviousTask:
+            clearSidebarSelection()
+            performRecentWorkspaceSelection(.previous)
+            return
+        case .openNextTask:
+            clearSidebarSelection()
+            performRecentWorkspaceSelection(.next)
+            return
+        case let .selectAgentSlot(slot):
+            clearSidebarSelection()
+            performAgentSlotSelection(slot)
+            return
+        case let .questionAnswer(intent):
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            lastAction = intent == .previous
+                ? "问答上一条 · 不可用（无安全执行器）"
+                : "问答下一条 · 不可用（无安全执行器）"
+            logger.info("action=qa-navigation result=unavailable-no-safe-executor")
             return
         case .openSelected:
             if sidebarTask != nil {
@@ -269,6 +302,10 @@ final class AppModel: ObservableObject {
                 logger.info(
                     "sidebar operation=open result=blocked-selection-in-flight"
                 )
+                return
+            }
+            if let threadID = workspaceNavigator.selectedTaskID {
+                requestWorkspaceOpen(threadID: threadID)
                 return
             }
             if automation.hasSidebarTaskSelection {
@@ -280,6 +317,7 @@ final class AppModel: ObservableObject {
         }
 
         clearSidebarSelection()
+        clearWorkspaceSelection()
         let succeeded = automation.execute(action)
         lastAction = "\(action.displayName) · \(succeeded ? "已执行" : "已阻止")"
         let result = succeeded ? "executed" : "blocked"
@@ -334,6 +372,117 @@ final class AppModel: ObservableObject {
         sidebarTask?.cancel()
         sidebarTask = nil
         automation.clearSidebarTaskSelection()
+    }
+
+    private func refreshWorkspaceCatalogIfNeeded(
+        force: Bool = false
+    ) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastWorkspaceCatalogRefreshAt >= 1 else { return }
+        lastWorkspaceCatalogRefreshAt = now
+        guard let catalog = try? CodexWorkspaceCatalog() else {
+            workspaceCatalogAvailable = false
+            workspaceSlotStatuses = Array(
+                repeating: .unavailable,
+                count: CodexWorkspaceCatalog.agentSlotLimit
+            )
+            workspaceNavigator.invalidate()
+            return
+        }
+        workspaceCatalogAvailable = true
+        workspaceNavigator.replaceCatalog(catalog)
+        workspaceSlotStatuses = (0..<CodexWorkspaceCatalog.agentSlotLimit).map {
+            catalog.agentSlots.indices.contains($0) ? .confirmed : .unavailable
+        }
+    }
+
+    private func performWorkspaceCatalog(_ intent: WorkspaceCatalogIntent) {
+        guard workspaceGateIsOpen() else {
+            lastAction = "Workspace Catalog · 已阻止"
+            return
+        }
+        refreshWorkspaceCatalogIfNeeded(force: true)
+        let result: CodexWorkspaceCatalogNavigator.Result
+        switch intent {
+        case let .moveSelection(direction):
+            result = workspaceNavigator.moveSelection(direction)
+        case .enterProject:
+            result = workspaceNavigator.enterProject()
+        case .leaveProject:
+            result = workspaceNavigator.leaveProject()
+        case .cycleRoot:
+            result = workspaceNavigator.cycleRoot()
+        }
+        recordWorkspaceResult(result, operation: "catalog")
+    }
+
+    private func performRecentWorkspaceSelection(
+        _ direction: SidebarTaskDirection
+    ) {
+        guard workspaceGateIsOpen() else {
+            lastAction = "Workspace Catalog · 已阻止"
+            return
+        }
+        refreshWorkspaceCatalogIfNeeded(force: true)
+        recordWorkspaceResult(
+            workspaceNavigator.moveRecentTask(direction),
+            operation: direction == .previous ? "previous" : "next"
+        )
+    }
+
+    private func performAgentSlotSelection(_ slot: AgentSlot) {
+        guard workspaceGateIsOpen() else {
+            lastAction = "Agent 槽位 \(slot.rawValue) · 已阻止"
+            return
+        }
+        refreshWorkspaceCatalogIfNeeded(force: true)
+        recordWorkspaceResult(
+            workspaceNavigator.selectAgentSlot(slot),
+            operation: "agent-slot"
+        )
+    }
+
+    private func recordWorkspaceResult(
+        _ result: CodexWorkspaceCatalogNavigator.Result,
+        operation: String
+    ) {
+        switch result {
+        case .confirmed:
+            lastAction = "Workspace Catalog · 已确认"
+            logger.info("workspace operation=\(operation, privacy: .public) result=selection-confirmed")
+        case .unavailable:
+            lastAction = "Workspace Catalog · 不可用"
+            logger.info("workspace operation=\(operation, privacy: .public) result=unavailable")
+        }
+    }
+
+    private func requestWorkspaceOpen(threadID: UUID) {
+        guard workspaceGateIsOpen(), sidebarTask == nil else {
+            lastAction = "打开 Workspace 任务 · 已阻止"
+            return
+        }
+        sidebarRevision += 1
+        let revision = sidebarRevision
+        lastAction = "打开 Workspace 任务 · 正在确认"
+        sidebarTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await automation.openWorkspaceTask(threadID: threadID)
+            guard sidebarRevision == revision else { return }
+            lastAction = result.diagnostic
+            sidebarTask = nil
+            clearWorkspaceSelection()
+        }
+    }
+
+    private func clearWorkspaceSelection() {
+        workspaceNavigator.clearSelection()
+    }
+
+    private func workspaceGateIsOpen() -> Bool {
+        bridgeEnabled &&
+            currentSnapshot.isConnected &&
+            mappingEngine.phase == .active &&
+            automation.isCodexForeground
     }
 
     private func requestDictation(recording: Bool) {
@@ -473,6 +622,8 @@ private extension ControllerAction {
         case .startDictation: "开始语音"
         case .stopDictation: "结束语音"
         case .navigate(let direction): "方向 \(direction.displayName)"
+        case .workspaceCatalog: "Workspace Catalog"
+        case .questionAnswer: "问答导航"
         case .selectSidebarTask(let direction):
             direction == .previous ? "侧边栏上一任务" : "侧边栏下一任务"
         case .openModelPicker: "模型选择"

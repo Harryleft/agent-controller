@@ -91,7 +91,8 @@ public final class CodexMacAutomation {
         case .openModelPicker:
             clearSidebarTaskSelection()
             return inject(.m, modifiers: [.maskControl, .maskShift])
-        case .openPreviousTask, .openNextTask, .selectAgentSlot,
+        case .workspaceCatalog, .questionAnswer,
+             .openPreviousTask, .openNextTask, .selectAgentSlot,
              .command, .running, .openActionPanel, .closeActionPanel,
              .actionPanel:
             // These intents are deliberately modeled before their semantic
@@ -243,6 +244,14 @@ public final class CodexMacAutomation {
                     ? .focusFailed : .codexNotForeground
                 return logSidebarResult(result, operation: "open")
             }
+            guard !Task.isCancelled,
+                  foregroundCodexApplication?.processIdentifier == pid else {
+                clearSidebarTaskSelection()
+                return logSidebarResult(
+                    .codexNotForeground,
+                    operation: "open"
+                )
+            }
             guard let deepLink = CodexThreadDeepLink.url(
                 for: target.task.threadID
             ) else {
@@ -299,6 +308,20 @@ public final class CodexMacAutomation {
                 operation: "open"
             )
         }
+    }
+
+    /// Open a controller-owned catalog candidate. The UUID is not trusted by
+    /// itself: `openSelectedSidebarTask()` immediately rebuilds the visible AX
+    /// sidebar and refuses unless the same UUID has one exact, unique title
+    /// identity there. The existing deep-link and two consecutive toolbar AX
+    /// confirmations then remain the sole success criterion.
+    public func openWorkspaceTask(
+        threadID: UUID
+    ) async -> CodexSidebarAutomationResult {
+        clearSidebarTaskSelection()
+        selectedSidebarThreadID = threadID
+        defer { clearSidebarTaskSelection() }
+        return await openSelectedSidebarTask()
     }
 
     public func clearSidebarTaskSelection() {

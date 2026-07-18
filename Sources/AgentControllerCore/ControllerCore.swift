@@ -99,6 +99,23 @@ public enum SidebarTaskDirection: String, CaseIterable, Equatable, Sendable {
     case previous, next
 }
 
+/// Intent for the controller-owned workspace directory. These are local
+/// selection operations only; none of them instruct Codex to open a task.
+public enum WorkspaceCatalogIntent: Equatable, Sendable {
+    case moveSelection(SidebarTaskDirection)
+    case enterProject
+    case leaveProject
+    case cycleRoot
+}
+
+/// Base D-pad up/down have an intentionally separate semantic from the left
+/// stick. The platform currently has no confirmed Q&A executor, so this
+/// intent must remain unavailable rather than falling through to arrow keys.
+public enum QuestionAnswerNavigationIntent: Equatable, Sendable {
+    case previous
+    case next
+}
+
 /// Input layers are mutually exclusive. They are exposed for deterministic
 /// tests and for the HUD, but never grant platform automation on their own.
 public enum ControllerInputLayer: String, Equatable, Sendable {
@@ -150,6 +167,8 @@ public enum ControllerAction: Equatable, Sendable {
     case startDictation
     case stopDictation
     case navigate(NavigationDirection)
+    case workspaceCatalog(WorkspaceCatalogIntent)
+    case questionAnswer(QuestionAnswerNavigationIntent)
     case selectSidebarTask(SidebarTaskDirection)
     case openModelPicker
     case openPreviousTask
@@ -507,6 +526,9 @@ public struct ControllerMappingEngine: Sendable {
         if pressed(.rightThumbstick, in: snapshot) {
             actions.append(.openModelPicker)
         }
+        if pressed(.leftThumbstick, in: snapshot) {
+            actions.append(.workspaceCatalog(.cycleRoot))
+        }
         if let navigation = navigationAction(snapshot, deadZone: deadZone) {
             actions.append(navigation)
         }
@@ -728,10 +750,29 @@ public struct ControllerMappingEngine: Sendable {
             return nil
         }
 
-        if let dpad, dpadIsNew { return .navigate(dpad) }
+        // The D-pad has the same base workspace boundary as the left stick:
+        // up/down is a distinct Q&A intent (currently unavailable), while
+        // left/right leaves or enters the app-owned project directory. No
+        // D-pad direction falls through to an unconfirmed injected arrow key.
+        if let dpad, dpadIsNew {
+            switch dpad {
+            case .up: return .questionAnswer(.previous)
+            case .down: return .questionAnswer(.next)
+            case .left: return .workspaceCatalog(.leaveProject)
+            case .right: return .workspaceCatalog(.enterProject)
+            }
+        }
         guard let stick, stickIsNew else { return nil }
-
-        return .navigate(stick)
+        switch stick {
+        case .up:
+            return .workspaceCatalog(.moveSelection(.previous))
+        case .down:
+            return .workspaceCatalog(.moveSelection(.next))
+        case .left:
+            return .workspaceCatalog(.leaveProject)
+        case .right:
+            return .workspaceCatalog(.enterProject)
+        }
     }
 
     private mutating func absorbNavigationDuringDictation(

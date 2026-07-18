@@ -66,6 +66,51 @@ final class CodexWorkspaceCatalogTests: XCTestCase {
 
         XCTAssertEqual(catalog.roots.map(\.contents), [.unavailable, .unavailable, .unavailable, .unavailable])
         XCTAssertEqual(catalog.agentSlots, [task(1, 1)])
+        XCTAssertEqual(catalog.recentTasks, [task(1, 1)])
+    }
+
+    func testNavigatorMovesOnlyAppOwnedCatalogSelectionAndEntersProject() {
+        let catalog = CodexWorkspaceCatalog(
+            sessionRecords: [record(1, minute: 1), record(2, minute: 2)],
+            metadata: CodexWorkspaceMetadata(
+                projects: .available(["alpha": .init(id: "alpha", name: "Alpha")]),
+                pinnedThreadIDs: .available([]),
+                pinnedProjectIDs: .available([]),
+                assignments: .available([uuid(2): "alpha"]),
+                projectlessThreadIDs: .available([uuid(1)])
+            )
+        )
+        var navigator = CodexWorkspaceCatalogNavigator()
+        navigator.replaceCatalog(catalog)
+
+        XCTAssertEqual(navigator.moveSelection(.next), .unavailable)
+        XCTAssertEqual(navigator.cycleRoot(), .confirmed(.root(.pinnedProjects)))
+        XCTAssertEqual(navigator.moveSelection(.next), .unavailable)
+        XCTAssertEqual(navigator.cycleRoot(), .confirmed(.root(.projects)))
+        XCTAssertEqual(navigator.moveSelection(.next), .confirmed(.project(id: "alpha")))
+        XCTAssertEqual(navigator.enterProject(), .confirmed(.project(id: "alpha")))
+        XCTAssertEqual(navigator.moveSelection(.next), .confirmed(.task(uuid(2))))
+        XCTAssertEqual(navigator.selectedTaskID, uuid(2))
+        XCTAssertEqual(navigator.leaveProject(), .confirmed(.project(id: "alpha")))
+        XCTAssertNil(navigator.selectedTaskID)
+    }
+
+    func testNavigatorUsesRecentTasksAndSlotsWithoutTitles() {
+        let catalog = CodexWorkspaceCatalog(
+            sessionRecords: [record(1, minute: 1), record(2, minute: 2)],
+            metadata: .unavailable
+        )
+        var navigator = CodexWorkspaceCatalogNavigator()
+        navigator.replaceCatalog(catalog)
+
+        XCTAssertEqual(navigator.moveRecentTask(.next), .confirmed(.task(uuid(2))))
+        XCTAssertEqual(navigator.moveRecentTask(.previous), .confirmed(.task(uuid(1))))
+        XCTAssertEqual(navigator.selectAgentSlot(.one), .confirmed(.task(uuid(2))))
+        XCTAssertEqual(navigator.selectAgentSlot(.three), .unavailable)
+        navigator.clearSelection()
+        XCTAssertNil(navigator.selectedTaskID)
+        navigator.invalidate()
+        XCTAssertEqual(navigator.moveRecentTask(.next), .unavailable)
     }
 
     func testMetadataReaderIgnoresPromptReplyAndPaths() throws {

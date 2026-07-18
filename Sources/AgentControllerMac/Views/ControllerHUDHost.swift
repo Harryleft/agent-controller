@@ -25,8 +25,18 @@ struct ControllerHUDHost: View {
             bridgeEnabled: model.bridgeEnabled,
             codexForeground: model.codexForeground,
             controllerConnected: model.isControllerConnected,
-            activeLayer: activeLayer(from: model.controllerInputLayer)
+            activeLayer: activeLayer(from: model.controllerInputLayer),
+            layerStatuses: hudLayerStatuses,
+            slotStatuses: model.workspaceSlotStatuses
         )
+    }
+
+    private var hudLayerStatuses: [ControllerHUDLayer: ControllerHUDStatus] {
+        var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
+        statuses[.leftShoulder] = model.workspaceCatalogAvailable
+            ? .confirmed
+            : .unavailable
+        return statuses
     }
 
     private func refreshHUD(_ state: ControllerHUDRuntimeState) {

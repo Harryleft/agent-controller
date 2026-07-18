@@ -9,6 +9,9 @@ public struct CodexWorkspaceCatalog: Equatable, Sendable {
     public static let agentSlotLimit = 6
 
     public let roots: [CodexWorkspaceRootDirectory]
+    /// All known tasks, newest first. This remains title-free and is used only
+    /// for controller-local previous/next selection.
+    public let recentTasks: [CodexWorkspaceTask]
     public let agentSlots: [CodexWorkspaceTask]
 
     public init(
@@ -30,6 +33,7 @@ public struct CodexWorkspaceCatalog: Equatable, Sendable {
         }
         let state = metadata ?? .unavailable
         self.roots = Self.makeRoots(tasks: tasks, metadata: state)
+        self.recentTasks = Self.sort(tasks)
         self.agentSlots = Self.makeAgentSlots(tasks: tasks, metadata: state)
     }
 
