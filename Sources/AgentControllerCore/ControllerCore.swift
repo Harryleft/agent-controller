@@ -523,12 +523,12 @@ public struct ControllerMappingEngine: Sendable {
             actions.append(.openActionPanel)
             return
         }
-        if pressed(.rightThumbstick, in: snapshot) {
-            actions.append(.openModelPicker)
-        }
         if pressed(.leftThumbstick, in: snapshot) {
             actions.append(.workspaceCatalog(.cycleRoot))
         }
+        // R3 and the right stick are owned by ModelControlStateMachine in the
+        // app layer. Keeping R3 out of this older general-action mapper avoids
+        // a second, incompatible shortcut path racing the model controls.
         if let navigation = navigationAction(snapshot, deadZone: deadZone) {
             actions.append(navigation)
         }

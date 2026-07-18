@@ -126,7 +126,7 @@ struct ContentView: View {
                 MappingRow(control: "Y", action: "新建任务")
                 MappingRow(control: "B", action: "短按取消；按住 3 秒停止")
                 MappingRow(control: "LT", action: "按住说话")
-                MappingRow(control: "R3", action: "模型选择器")
+                MappingRow(control: "右摇杆 / R3", action: "Simple 模型控制；R3 长按 500 ms 打开设置")
                 MappingRow(control: "十字键 / 左摇杆", action: "普通四向导航")
                 MappingRow(control: "LB + ↑ / ↓", action: "选择可见侧边栏任务（不打开）")
             }

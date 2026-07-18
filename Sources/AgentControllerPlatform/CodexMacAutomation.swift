@@ -106,6 +106,33 @@ public final class CodexMacAutomation {
         }
     }
 
+    /// Direct a model shortcut only after its exact binding has been verified.
+    /// No current Model/Effort/Speed AX contract is stable enough to confirm a
+    /// fresh value or menu transition, so a posted event is deliberately
+    /// returned as unavailable rather than as UI success.
+    public func executeModelControl(
+        _ action: ModelControlAction,
+        bindingAvailability: CodexKeybindingAvailability
+    ) -> CodexModelControlAutomationResult {
+        guard bindingAvailability == .available else {
+            logger.error("model control blocked reason=binding-unavailable")
+            return .unavailable
+        }
+        guard case let .shortcut(shortcut) =
+                CodexModelControlDispatchPlan.resolve(action) else {
+            logger.error("model control blocked reason=ui-contract-unavailable")
+            return .unavailable
+        }
+
+        let posted: Bool
+        switch shortcut {
+        case let .semantic(semanticAction):
+            posted = inject(keyCode(for: semanticAction))
+        }
+        guard posted else { return .unavailable }
+        return .shortcutPostedWithoutUIConfirmation
+    }
+
     /// Move a controller-owned candidate through tasks currently visible in
     /// the Codex sidebar. This changes only exact AX focus and never opens a
     /// task. Full titles are reduced to one-way identities during discovery;
@@ -1332,6 +1359,17 @@ public final class CodexMacAutomation {
         case .right: .rightArrow
         }
     }
+
+    private func keyCode(for action: CodexSemanticAction) -> KeyCode {
+        switch action {
+        case .reasoningDown: .f13
+        case .reasoningUp: .f14
+        case .openModelPicker: .f15
+        case .toggleFastMode: .f16
+        // This executor is intentionally only used for model actions.
+        case .forkThread: .f17
+        }
+    }
 }
 
 private enum DictationState: Equatable {
@@ -1454,5 +1492,10 @@ private struct KeyCode: RawRepresentable {
     static let space = KeyCode(rawValue: 49)
     static let m = KeyCode(rawValue: 46)
     static let n = KeyCode(rawValue: 45)
+    static let f13 = KeyCode(rawValue: 105)
+    static let f14 = KeyCode(rawValue: 107)
+    static let f15 = KeyCode(rawValue: 113)
+    static let f16 = KeyCode(rawValue: 106)
+    static let f17 = KeyCode(rawValue: 64)
 
 }

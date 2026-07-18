@@ -67,7 +67,6 @@ final class ControllerMappingEngineTests: XCTestCase {
         let cases: [(Set<ControllerButton>, ControllerAction)] = [
             ([.a], .openSelected),
             ([.x], .submit),
-            ([.rightThumbstick], .openModelPicker),
             ([.dpadUp], .questionAnswer(.previous)),
             ([.dpadRight], .workspaceCatalog(.enterProject)),
             ([.dpadDown], .questionAnswer(.next)),
@@ -81,6 +80,17 @@ final class ControllerMappingEngineTests: XCTestCase {
             XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time), [])
             time += 1
         }
+
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.rightThumbstick]),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: false,
+                codexIsForeground: false,
+                timestamp: time),
+            [],
+            "R3 is consumed exclusively by ModelControlStateMachine"
+        )
 
         XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.9, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time), [.workspaceCatalog(.enterProject)])
         XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.9, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 1), [])

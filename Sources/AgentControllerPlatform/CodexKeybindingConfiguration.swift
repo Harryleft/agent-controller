@@ -80,6 +80,14 @@ public enum CodexKeybindingConflict: Equatable, Sendable {
     case duplicateManagedBinding(action: CodexSemanticAction)
 }
 
+/// Whether the exact fixed binding can be used without guessing. A binding is
+/// usable only after the on-disk configuration contains exactly one matching
+/// command/key pair and no conflict owns either side of that pair.
+public enum CodexKeybindingAvailability: Equatable, Sendable {
+    case available
+    case unavailable
+}
+
 public enum CodexKeybindingConfigurationOutcome: Equatable, Sendable {
     case updated(
         backupCreated: Bool,
@@ -116,9 +124,19 @@ public struct CodexKeybindingConfigurationService: Sendable {
     }
 
     public static var defaultURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        let fileManager = FileManager.default
+        let codexHome: URL
+        if let override = ProcessInfo.processInfo.environment[
+            "AGENT_CONTROLLER_CODEX_HOME"
+        ], !override.isEmpty {
+            // Test and development worktrees can isolate provisioning without
+            // ever touching the user's real ~/.codex configuration.
+            codexHome = URL(fileURLWithPath: override, isDirectory: true)
+        } else {
+            codexHome = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex", isDirectory: true)
-            .appendingPathComponent(filename, isDirectory: false)
+        }
+        return codexHome.appendingPathComponent(filename, isDirectory: false)
     }
 
     public var backupURL: URL {
@@ -126,6 +144,25 @@ public struct CodexKeybindingConfigurationService: Sendable {
             fileURL.lastPathComponent + Self.backupSuffix,
             isDirectory: false
         )
+    }
+
+    /// Re-reads the current file after provisioning. This deliberately does
+    /// not infer availability from a successful write: Codex may have been
+    /// configured by another process, and a conflict must remain unavailable.
+    public func bindingAvailability(
+        for action: CodexSemanticAction
+    ) -> CodexKeybindingAvailability {
+        do {
+            let entries = try readArray(at: fileURL)
+            guard !conflicts(in: entries).contains(where: {
+                $0.action == action
+            }), containsExactBinding(action, in: entries) else {
+                return .unavailable
+            }
+            return .available
+        } catch {
+            return .unavailable
+        }
     }
 
     @discardableResult

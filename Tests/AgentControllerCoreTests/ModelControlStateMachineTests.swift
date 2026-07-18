@@ -82,6 +82,40 @@ final class ModelControlStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.update(.neutral, timestamp: 1.6), [])
     }
 
+    func testResetCancelsR3WithoutSynthesizingTapOrHoldAfterGateRecovery() {
+        let store = ModeStore(.simple)
+        var machine = ModelControlStateMachine(modeStore: store)
+
+        XCTAssertEqual(
+            machine.update(.init(rightStickPressed: true), timestamp: 0),
+            []
+        )
+        machine.reset()
+        XCTAssertEqual(machine.update(.neutral, timestamp: 1), [])
+
+        XCTAssertEqual(
+            machine.update(.init(rightStickPressed: true), timestamp: 2),
+            []
+        )
+        machine.reset()
+        XCTAssertEqual(
+            machine.update(.init(rightStickPressed: true), timestamp: 3),
+            []
+        )
+        XCTAssertEqual(machine.update(.neutral, timestamp: 3.1), [.openModelMenu(.simple)])
+    }
+
+    func testResetFlushesDirectionRepeatUntilANewPostRecoveryEdge() {
+        let store = ModeStore(.simple)
+        var machine = ModelControlStateMachine(modeStore: store)
+        let right = ModelControlInput(rightX: 1)
+
+        XCTAssertEqual(machine.update(right, timestamp: 0), [.adjustReasoningPower(.up)])
+        machine.reset()
+        XCTAssertEqual(machine.update(.neutral, timestamp: 1), [])
+        XCTAssertEqual(machine.update(right, timestamp: 2), [.adjustReasoningPower(.up)])
+    }
+
     func testDiagonalUsesDominantAxisAndChangingDirectionIsAnImmediateNewEdge() {
         let store = ModeStore(.simple)
         var machine = ModelControlStateMachine(modeStore: store)

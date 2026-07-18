@@ -1,5 +1,6 @@
 import AgentControllerCore
 import AgentControllerPlatform
+import AppKit
 import Combine
 import Foundation
 import OSLog
@@ -28,6 +29,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var modelControlMode: ModelControlMode {
+        didSet {
+            modelControlStateMachine.setMode(modelControlMode)
+        }
+    }
+
     @Published private(set) var controllerName = "未连接"
     @Published private(set) var controllerCompatibility = "等待手柄"
     @Published private(set) var isControllerConnected = false
@@ -39,6 +46,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var sessionPhase = "Locked"
     @Published private(set) var controllerInputLayer: ControllerInputLayer = .base
     @Published private(set) var keybindingStatus = "尚未配置"
+    @Published private(set) var modelControlStatus = "Unavailable"
     @Published private(set) var lastAction = "等待输入"
     @Published private(set) var workspaceCatalogAvailable = false
     @Published private(set) var workspaceSlotStatuses: [ControllerHUDStatus] =
@@ -54,7 +62,14 @@ final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private let controllerService: GameControllerService
     private let automation: CodexMacAutomation
+    private let keybindingConfigurationService:
+        CodexKeybindingConfigurationService
+    private let modelControlModeStore: UserDefaultsModelControlModeStore
     private var mappingEngine = ControllerMappingEngine()
+    private var modelControlStateMachine: ModelControlStateMachine
+    private var modelBindingAvailability: [
+        CodexSemanticAction: CodexKeybindingAvailability
+    ] = [:]
     private var currentSnapshot = ControllerSnapshot.disconnected
     private var dictationDesiredByBridge = false
     private var dictationStartedByBridge = false
@@ -77,6 +92,16 @@ final class AppModel: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let modelControlModeStore = UserDefaultsModelControlModeStore(
+            defaults: defaults
+        )
+        self.modelControlModeStore = modelControlModeStore
+        modelControlStateMachine = ModelControlStateMachine(
+            modeStore: modelControlModeStore
+        )
+        modelControlMode = modelControlModeStore.modelControlMode
+        keybindingConfigurationService =
+            CodexKeybindingConfigurationService()
         controllerService = GameControllerService()
         automation = CodexMacAutomation()
 
@@ -121,7 +146,13 @@ final class AppModel: ObservableObject {
     }
 
     private func configureCodexKeybindings() {
-        let result = CodexKeybindingConfigurationService().install()
+        let result = keybindingConfigurationService.install()
+        modelBindingAvailability = Dictionary(
+            uniqueKeysWithValues: CodexSemanticAction.allCases.map {
+                ($0, keybindingConfigurationService.bindingAvailability(for: $0))
+            }
+        )
+        modelControlStatus = modelBindingStatusDescription()
         switch result.outcome {
         case let .updated(backupCreated, conflicts):
             let base = backupCreated ? "已配置 · 已备份" : "已配置"
@@ -233,9 +264,81 @@ final class AppModel: ObservableObject {
             refreshWorkspaceCatalogIfNeeded()
         }
 
+        processModelControls(snapshot)
+
         for action in actions {
             execute(action)
         }
+    }
+
+    private func processModelControls(_ snapshot: ControllerSnapshot) {
+        guard bridgeEnabled,
+              snapshot.isConnected,
+              mappingEngine.phase == .active,
+              automation.isCodexForeground else {
+            modelControlStateMachine.reset()
+            return
+        }
+
+        let input = ModelControlInput(
+            rightX: snapshot.rightX,
+            rightY: snapshot.rightY,
+            rightStickPressed: snapshot.buttons.contains(.rightThumbstick)
+        )
+        let actions = modelControlStateMachine.update(
+            input,
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+        for action in actions {
+            if action == .openAgentControllerSettings {
+                openAgentControllerSettings()
+                continue
+            }
+            let availability = bindingAvailability(for: action)
+            let result = automation.executeModelControl(
+                action,
+                bindingAvailability: availability
+            )
+            lastAction = "\(action.displayName) · \(result.diagnostic)"
+        }
+    }
+
+    private func bindingAvailability(
+        for action: ModelControlAction
+    ) -> CodexKeybindingAvailability {
+        guard case let .shortcut(.semantic(semanticAction)) =
+                CodexModelControlDispatchPlan.resolve(action) else {
+            return .unavailable
+        }
+        let availability = keybindingConfigurationService.bindingAvailability(
+            for: semanticAction
+        )
+        modelBindingAvailability[semanticAction] = availability
+        modelControlStatus = modelBindingStatusDescription()
+        return availability
+    }
+
+    private func modelBindingStatusDescription() -> String {
+        let labels: [(CodexSemanticAction, String)] = [
+            (.reasoningDown, "F13"),
+            (.reasoningUp, "F14"),
+            (.openModelPicker, "F15"),
+            (.toggleFastMode, "F16")
+        ]
+        return labels.map { action, key in
+            let availability = modelBindingAvailability[action] ?? .unavailable
+            return "\(key) \(availability == .available ? "可用" : "Unavailable")"
+        }.joined(separator: " · ")
+    }
+
+    private func openAgentControllerSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        let shown = NSApp.sendAction(
+            Selector(("showSettingsWindow:")),
+            to: nil,
+            from: nil
+        )
+        lastAction = shown ? "打开 Agent Controller 设置" : "设置 · Unavailable"
     }
 
     private func execute(_ action: ControllerAction) {
@@ -636,6 +739,40 @@ private extension ControllerAction {
         case .closeActionPanel: "关闭动作面板"
         case .actionPanel(let intent): "动作面板 · \(intent.rawValue)"
         }
+    }
+}
+
+private extension ModelControlAction {
+    var displayName: String {
+        switch self {
+        case .adjustReasoningPower(.down): "Power -"
+        case .adjustReasoningPower(.up): "Power +"
+        case .selectSimpleSpeed(.standard): "Standard"
+        case .selectSimpleSpeed(.fast): "Fast"
+        case let .selectAdvancedTarget(target): "Advanced \(target.rawValue)"
+        case let .stepAdvancedTarget(target, direction):
+            "Advanced \(target.rawValue) \(direction == .up ? "上" : "下")"
+        case .openModelMenu: "模型菜单"
+        case .openAgentControllerSettings: "打开设置"
+        }
+    }
+}
+
+private final class UserDefaultsModelControlModeStore: ModelControlModeStoring {
+    private static let key = "modelControlMode"
+    private let defaults: UserDefaults
+
+    var modelControlMode: ModelControlMode {
+        didSet {
+            defaults.set(modelControlMode.rawValue, forKey: Self.key)
+        }
+    }
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+        modelControlMode = ModelControlMode(
+            rawValue: defaults.string(forKey: Self.key) ?? ""
+        ) ?? .simple
     }
 }
 

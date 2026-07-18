@@ -3,7 +3,7 @@ import Foundation
 /// The user-facing level of model controls. Persistence is deliberately kept
 /// outside this domain: the UI can choose any storage implementation without
 /// making this state machine depend on AppModel or UserDefaults.
-public enum ModelControlMode: String, Equatable, Sendable {
+public enum ModelControlMode: String, CaseIterable, Equatable, Sendable {
     case simple
     case advanced
 }
@@ -99,6 +99,18 @@ public struct ModelControlStateMachine {
     /// abstraction rather than knowing anything about the application's store.
     public func setMode(_ mode: ModelControlMode) {
         modeStore.modelControlMode = mode
+    }
+
+    /// Drop every in-flight right-stick/R3 gesture without emitting an action.
+    /// The app calls this whenever any controller-to-Codex safety gate closes,
+    /// so a release or delayed polling sample cannot synthesize a tap, hold,
+    /// or repeat after foreground/session recovery.
+    public mutating func reset() {
+        heldDirection = nil
+        directionBeganAt = nil
+        nextRepeatAt = nil
+        r3PressedAt = nil
+        r3HoldEmitted = false
     }
 
     public mutating func update(

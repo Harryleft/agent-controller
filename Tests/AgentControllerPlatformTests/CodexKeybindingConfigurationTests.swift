@@ -113,6 +113,45 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         )
     }
 
+    func testBindingAvailabilityIsPerCommandAndConflictNeverGetsOverwritten() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        try write([["command": "user.command", "key": "F14"]], to: file)
+
+        let service = CodexKeybindingConfigurationService(fileURL: file)
+        _ = service.install()
+
+        XCTAssertEqual(
+            service.bindingAvailability(for: .reasoningDown),
+            .available
+        )
+        XCTAssertEqual(
+            service.bindingAvailability(for: .reasoningUp),
+            .unavailable
+        )
+        XCTAssertEqual(
+            service.bindingAvailability(for: .openModelPicker),
+            .available
+        )
+        XCTAssertEqual(
+            service.bindingAvailability(for: .toggleFastMode),
+            .available
+        )
+
+        let entries = try read(file)
+        XCTAssertTrue(entries.contains { item in
+            let binding = item as? [String: Any]
+            return binding?["command"] as? String == "user.command" &&
+                binding?["key"] as? String == "F14"
+        })
+        XCTAssertFalse(entries.contains { item in
+            let binding = item as? [String: Any]
+            return binding?["command"] as? String ==
+                CodexSemanticAction.reasoningUp.command
+        })
+    }
+
     func testInvalidJSONOrMalformedBindingNeverWrites() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
