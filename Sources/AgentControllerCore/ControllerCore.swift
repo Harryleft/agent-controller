@@ -114,6 +114,8 @@ public enum WorkspaceCatalogIntent: Equatable, Sendable {
 public enum QuestionAnswerNavigationIntent: Equatable, Sendable {
     case previous
     case next
+    case top
+    case bottom
 }
 
 /// Input layers are mutually exclusive. They are exposed for deterministic
@@ -305,6 +307,8 @@ public struct ControllerMappingEngine: Sendable {
     public static let stopHoldDuration: TimeInterval = 3
     public static let approveHoldDuration: TimeInterval = 0.5
     public static let clearComposerConfirmationDuration: TimeInterval = 2.5
+    public static let questionAnswerTopHoldDuration: TimeInterval = 4
+    public static let questionAnswerBottomHoldDuration: TimeInterval = 3
     /// A wireless controller can sleep without macOS immediately delivering
     /// a disconnect notification. After this much GameController silence,
     /// cached input must pass the neutral gate again before it can act.
@@ -335,6 +339,9 @@ public struct ControllerMappingEngine: Sendable {
     private var clearComposerRequestedAt: TimeInterval?
     private var cancelStartedAt: TimeInterval?
     private var stopWasEmitted = false
+    private var questionAnswerDirection: NavigationDirection?
+    private var questionAnswerPressedAt: TimeInterval?
+    private var questionAnswerHoldEmitted = false
 
     public init() {}
 
@@ -448,6 +455,7 @@ public struct ControllerMappingEngine: Sendable {
         } else if runningLayerActive ||
             snapshot.rightTrigger >= Self.runningStartThreshold
         {
+            clearQuestionAnswerHold()
             actions.append(contentsOf: routeRunningLayer(snapshot, now: now))
         } else if actionPanelActive {
             actions.append(contentsOf: routeActionPanel(snapshot, now: now))
@@ -553,7 +561,11 @@ public struct ControllerMappingEngine: Sendable {
         // R3 and the right stick are owned by ModelControlStateMachine in the
         // app layer. Keeping R3 out of this older general-action mapper avoids
         // a second, incompatible shortcut path racing the model controls.
-        if let navigation = navigationAction(snapshot, deadZone: deadZone) {
+        if let navigation = navigationAction(
+            snapshot,
+            now: now,
+            deadZone: deadZone
+        ) {
             actions.append(navigation)
         }
     }
@@ -784,6 +796,7 @@ public struct ControllerMappingEngine: Sendable {
 
     private mutating func navigationAction(
         _ snapshot: ControllerSnapshot,
+        now: TimeInterval,
         deadZone: Double
     ) -> ControllerAction? {
         let dpad = dpadDirection(snapshot)
@@ -798,17 +811,24 @@ public struct ControllerMappingEngine: Sendable {
             return nil
         }
 
-        // The D-pad has the same base workspace boundary as the left stick:
-        // up/down is a distinct Q&A intent (currently unavailable), while
-        // left/right leaves or enters the app-owned project directory. No
-        // D-pad direction falls through to an unconfirmed injected arrow key.
-        if let dpad, dpadIsNew {
+        // D-pad up/down are release-confirmed Q&A actions.  A short press
+        // emits only after release; a hold emits exactly one top/bottom intent
+        // and suppresses the short intent.  No direction falls through to an
+        // unconfirmed injected arrow key.
+        if let dpad {
             switch dpad {
-            case .up: return .questionAnswer(.previous)
-            case .down: return .questionAnswer(.next)
-            case .left: return .workspaceCatalog(.leaveProject)
-            case .right: return .workspaceCatalog(.enterProject)
+            case .up, .down:
+                return questionAnswerAction(for: dpad, now: now)
+            case .left:
+                clearQuestionAnswerHold()
+                return dpadIsNew ? .workspaceCatalog(.leaveProject) : nil
+            case .right:
+                clearQuestionAnswerHold()
+                return dpadIsNew ? .workspaceCatalog(.enterProject) : nil
             }
+        }
+        if let shortPress = questionAnswerAction(for: nil, now: now) {
+            return shortPress
         }
         guard let stick, stickIsNew else { return nil }
         switch stick {
@@ -827,6 +847,7 @@ public struct ControllerMappingEngine: Sendable {
         _ snapshot: ControllerSnapshot,
         deadZone: Double
     ) {
+        clearQuestionAnswerHold()
         let dpad = dpadDirection(snapshot)
         let stick = stickDirection(snapshot, deadZone: deadZone)
         previousStickDirection = stick
@@ -876,6 +897,7 @@ public struct ControllerMappingEngine: Sendable {
         clearLayerState()
         cancelStartedAt = nil
         stopWasEmitted = false
+        clearQuestionAnswerHold()
     }
 
     private mutating func clearLayerState() {
@@ -890,6 +912,51 @@ public struct ControllerMappingEngine: Sendable {
         commandApprovalEmitted = false
         actionPanelActive = false
         clearComposerRequestedAt = nil
+        clearQuestionAnswerHold()
+    }
+
+    private mutating func questionAnswerAction(
+        for direction: NavigationDirection?,
+        now: TimeInterval
+    ) -> ControllerAction? {
+        guard let direction else {
+            defer { clearQuestionAnswerHold() }
+            guard let pending = questionAnswerDirection,
+                  !questionAnswerHoldEmitted else {
+                return nil
+            }
+            switch pending {
+            case .up: return .questionAnswer(.previous)
+            case .down: return .questionAnswer(.next)
+            case .left, .right: return nil
+            }
+        }
+
+        guard direction == .up || direction == .down else {
+            clearQuestionAnswerHold()
+            return nil
+        }
+        guard questionAnswerDirection == direction,
+              let pressedAt = questionAnswerPressedAt else {
+            questionAnswerDirection = direction
+            questionAnswerPressedAt = now
+            questionAnswerHoldEmitted = false
+            return nil
+        }
+        guard !questionAnswerHoldEmitted else { return nil }
+
+        let threshold = direction == .up
+            ? Self.questionAnswerTopHoldDuration
+            : Self.questionAnswerBottomHoldDuration
+        guard now - pressedAt >= threshold else { return nil }
+        questionAnswerHoldEmitted = true
+        return .questionAnswer(direction == .up ? .top : .bottom)
+    }
+
+    private mutating func clearQuestionAnswerHold() {
+        questionAnswerDirection = nil
+        questionAnswerPressedAt = nil
+        questionAnswerHoldEmitted = false
     }
 
     private mutating func absorbInputDuringDictation(

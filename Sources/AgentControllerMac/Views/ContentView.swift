@@ -126,7 +126,7 @@ struct ContentView: View {
                 MappingRow(control: "Y", action: "打开 Action 层；Codex 动作当前 Unavailable")
                 MappingRow(control: "LT / RB + View", action: "按住说话（精确状态确认）")
                 MappingRow(control: "右摇杆 / R3", action: "固定模型键投递但不报成功；R3 长按打开设置")
-                MappingRow(control: "十字键 / 左摇杆", action: "Workspace Catalog；上下问答当前 Unavailable")
+                MappingRow(control: "十字键 / 左摇杆", action: "Workspace Catalog；上/下短按或长按首/尾问答当前 Unavailable")
                 MappingRow(control: "LB", action: "短按选择最近任务；长按选择 Agent 槽位")
                 MappingRow(control: "RB / RT", action: "Fork 仅投递未确认；其余命令 Unavailable")
             }

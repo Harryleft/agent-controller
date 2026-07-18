@@ -465,9 +465,16 @@ final class AppModel: ObservableObject {
         case let .questionAnswer(intent):
             clearSidebarSelection()
             clearWorkspaceSelection()
-            lastAction = intent == .previous
-                ? "问答上一条 · 不可用（无安全执行器）"
-                : "问答下一条 · 不可用（无安全执行器）"
+            switch intent {
+            case .previous:
+                lastAction = "问答上一条 · Unavailable（无安全执行器）"
+            case .next:
+                lastAction = "问答下一条 · Unavailable（无安全执行器）"
+            case .top:
+                lastAction = "问答首条 · Unavailable（无安全执行器）"
+            case .bottom:
+                lastAction = "问答末条 · Unavailable（无安全执行器）"
+            }
             logger.info("action=qa-navigation result=unavailable-no-safe-executor")
             return
         case .openSelected:

@@ -67,9 +67,7 @@ final class ControllerMappingEngineTests: XCTestCase {
         let cases: [(Set<ControllerButton>, ControllerAction)] = [
             ([.a], .openSelected),
             ([.x], .submit),
-            ([.dpadUp], .questionAnswer(.previous)),
             ([.dpadRight], .workspaceCatalog(.enterProject)),
-            ([.dpadDown], .questionAnswer(.next)),
             ([.dpadLeft], .workspaceCatalog(.leaveProject))
         ]
 
@@ -102,6 +100,96 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(engine.update(snapshot: snapshot(leftStick: SIMD2(0.15, 0)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 7, deadZone: 0.40), [])
 
         XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.leftThumbstick]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: time + 8), [.workspaceCatalog(.cycleRoot)])
+    }
+
+    func testQuestionAnswerShortPressesEmitOnlyAfterRelease() {
+        var engine = activeEngine()
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.5),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.6),
+            [.questionAnswer(.previous)]
+        )
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2.2),
+            [.questionAnswer(.next)]
+        )
+    }
+
+    func testQuestionAnswerHoldsEmitOnceAndNeverEmitShortPress() {
+        var engine = activeEngine()
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4.99),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5),
+            [.questionAnswer(.top)]
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 6),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 6.1), [])
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 7),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 9.99),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 10),
+            [.questionAnswer(.bottom)]
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 11),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 11.1), [])
+    }
+
+    func testQuestionAnswerCandidateClearsOnDirectionGateAndDisconnect() {
+        var engine = activeEngine()
+
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2.1), [.questionAnswer(.next)])
+
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadRight]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3.1), [.workspaceCatalog(.enterProject)])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3.2), [])
+
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadUp]), bridgeEnabled: false, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4.1), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4.2), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4.3), [])
+
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.dpadDown]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5), [])
+        XCTAssertEqual(engine.update(snapshot: .disconnected, bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5.1), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5.2), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5.3), [])
     }
 
     func testLeftShoulderTapAndHeldAgentLayerAreDistinct() {
