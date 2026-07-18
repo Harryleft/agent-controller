@@ -6,10 +6,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE_ID="com.harryleft.agent-controller.macos"
 COLLECT_SECONDS=""
+NO_RELAUNCH=false
 
 usage() {
   cat <<'USAGE'
-Usage: ./script/verify_unattended.sh [--collect-logs [seconds]]
+Usage: ./script/verify_unattended.sh [--no-relaunch] [--collect-logs [seconds]]
+
+  --no-relaunch
+      Run only swift test, `swift build --product AgentControllerMac`, and
+      git diff --check. This mode never calls pkill, never creates, removes,
+      or replaces dist/AgentControllerMac.app, and never starts a GUI.
 
 Runs swift test, package launch/signature verification, and git diff --check.
 With --collect-logs, starts a physical-controller evidence window after those
@@ -30,6 +36,13 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    --no-relaunch)
+      if [[ "$NO_RELAUNCH" == true ]]; then
+        echo "--no-relaunch may be specified only once" >&2
+        exit 2
+      fi
+      NO_RELAUNCH=true
+      ;;
     --help|-h)
       usage
       exit 0
@@ -47,10 +60,26 @@ if [[ -n "$COLLECT_SECONDS" ]] && (( COLLECT_SECONDS < 5 || COLLECT_SECONDS > 12
   exit 2
 fi
 
+if [[ "$NO_RELAUNCH" == true && -n "$COLLECT_SECONDS" ]]; then
+  echo "--no-relaunch cannot be combined with --collect-logs" >&2
+  exit 2
+fi
+
 cd "$ROOT_DIR"
 
 echo "==> swift test"
 swift test
+
+if [[ "$NO_RELAUNCH" == true ]]; then
+  echo "==> SwiftPM executable build (non-interactive; no app relaunch)"
+  swift build --product AgentControllerMac
+
+  echo "==> whitespace validation"
+  git diff --check
+
+  echo "Non-interactive verification passed; no app bundle or GUI was touched."
+  exit 0
+fi
 
 echo "==> app build/signature/launch verification"
 ./script/build_and_run.sh --verify

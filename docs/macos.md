@@ -147,7 +147,17 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ./script/verify_unattended.sh
 ```
 
-该入口顺序执行 `swift test`、`./script/build_and_run.sh --verify` 与 `git diff --check`。核心测试已覆盖：600 秒闲置后的状态不合成新按键、断连/重连时按住按钮必须先回中、LT 在断连或关闭 Bridge 时只产生一次停止清理，以及超过 60 秒未收到新 GameController 快照时强制重新回中。最后一项覆盖“无线手柄静默休眠但系统未发断连通知”的保守路径：首次恢复按键会被吞掉，松开后才重新 Active。它们只验证确定性的快照状态机，不能证明 macOS 从物理 Xbox 手柄唤醒后仍会发送通知、TCC 授权仍有效、或 Codex UI 仍接受动作。
+默认入口顺序执行 `swift test`、`./script/build_and_run.sh --verify` 与 `git diff --check`，会按现有行为停止同名应用、重建 `dist/AgentControllerMac.app` 并启动验证实例。
+
+如果不能干扰当前运行的 Agent Controller，使用：
+
+```bash
+./script/verify_unattended.sh --no-relaunch
+```
+
+该模式只执行 `swift test`、`swift build --product AgentControllerMac` 与 `git diff --check`；不会调用 `pkill`、不会创建/删除/重建 `dist/AgentControllerMac.app`，也不会启动 GUI。它不能与 `--collect-logs` 组合，也不产生物理手柄证据。
+
+核心测试已覆盖：600 秒闲置后的状态不合成新按键、断连/重连时按住按钮必须先回中、LT 在断连或关闭 Bridge 时只产生一次停止清理，以及超过 60 秒未收到新 GameController 快照时强制重新回中。最后一项覆盖“无线手柄静默休眠但系统未发断连通知”的保守路径：首次恢复按键会被吞掉，松开后才重新 Active。它们只验证确定性的快照状态机，不能证明 macOS 从物理 Xbox 手柄唤醒后仍会发送通知、TCC 授权仍有效、或 Codex UI 仍接受动作。
 
 需要在用户在场时收集短期运行证据，可使用（默认 30 秒，最多 120 秒）：
 
