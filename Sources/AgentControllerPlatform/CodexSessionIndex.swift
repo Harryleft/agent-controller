@@ -47,6 +47,21 @@ public enum CodexSessionIndexError: Error, Equatable, Sendable {
     case noValidRecords
 }
 
+/// The non-content metadata a local task directory is allowed to retain.
+///
+/// In particular, this intentionally excludes `thread_name`, prompts, and
+/// replies. A caller that needs a title match must use the one-way identity
+/// API above and must not turn it back into catalog state.
+public struct CodexSessionIndexRecord: Equatable, Sendable {
+    public let threadID: UUID
+    public let updatedAt: Date
+
+    public init(threadID: UUID, updatedAt: Date) {
+        self.threadID = threadID
+        self.updatedAt = updatedAt
+    }
+}
+
 /// Minimal, read-only view of `~/.codex/session_index.jsonl`.
 ///
 /// Only UUID, title digest, and timestamp are retained. Unknown fields are
@@ -58,6 +73,9 @@ public struct CodexSessionIndex: Sendable {
 
     private let threadIDsByTitleIdentity:
         [CodexSidebarTitleIdentity: Set<UUID>]
+
+    /// One record per UUID, ordered only by UUID for stable diagnostics.
+    public let records: [CodexSessionIndexRecord]
 
     public static var defaultURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -132,6 +150,11 @@ public struct CodexSessionIndex: Sendable {
             by: { $0.value.identity }
         ).mapValues { records in
             Set(records.map(\.key))
+        }
+        self.records = latestByThreadID.map { threadID, value in
+            CodexSessionIndexRecord(threadID: threadID, updatedAt: value.updatedAt)
+        }.sorted { lhs, rhs in
+            lhs.threadID.uuidString.lowercased() < rhs.threadID.uuidString.lowercased()
         }
     }
 
