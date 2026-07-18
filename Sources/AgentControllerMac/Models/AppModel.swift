@@ -88,7 +88,8 @@ final class AppModel: ObservableObject {
     /// Updated only by a GameController delivery, never by the periodic
     /// hold/foreground timer. This lets the core reject a cached snapshot
     /// after a silent wireless sleep.
-    private var lastControllerObservationAt: TimeInterval?
+    private var controllerObservationContinuity =
+        ControllerObservationContinuityTracker()
     private var dictationDesiredByBridge = false
     private var dictationStartedByBridge = false
     private var dictationNeedsCleanup = false
@@ -147,11 +148,10 @@ final class AppModel: ObservableObject {
 
         controllerService.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
-            if snapshot.isConnected {
-                lastControllerObservationAt = ProcessInfo.processInfo.systemUptime
-            } else {
-                lastControllerObservationAt = nil
-            }
+            controllerObservationContinuity.observe(
+                snapshot,
+                at: ProcessInfo.processInfo.systemUptime
+            )
             process(snapshot)
         }
         controllerService.onDeviceChange = { [weak self] device in
@@ -268,9 +268,7 @@ final class AppModel: ObservableObject {
 
         let now = ProcessInfo.processInfo.systemUptime
         let inputContinuityEstablished = snapshot.isConnected &&
-            lastControllerObservationAt.map {
-                now - $0 <= ControllerMappingEngine.inputContinuityTimeout
-            } == true
+            controllerObservationContinuity.isContinuous(at: now)
 
         let actions = mappingEngine.update(
             snapshot: snapshot,
