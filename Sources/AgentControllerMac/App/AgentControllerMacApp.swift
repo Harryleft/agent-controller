@@ -10,7 +10,7 @@ struct AgentControllerMacApp: App {
 
     var body: some Scene {
         WindowGroup("Agent Controller", id: "main") {
-            ContentView(model: model)
+            ControllerHUDHost(model: model)
                 .frame(minWidth: 720, idealWidth: 780, minHeight: 620)
         }
         .windowResizability(.contentMinSize)

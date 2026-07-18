@@ -26,6 +26,10 @@ let package = Package(
         .testTarget(
             name: "AgentControllerPlatformTests",
             dependencies: ["AgentControllerPlatform"]
+        ),
+        .testTarget(
+            name: "AgentControllerMacTests",
+            dependencies: ["AgentControllerMac"]
         )
     ]
 )

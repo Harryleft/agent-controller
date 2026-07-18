@@ -37,6 +37,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var canPostEvents = false
     @Published private(set) var accessibilityTrusted = false
     @Published private(set) var sessionPhase = "Locked"
+    @Published private(set) var controllerInputLayer: ControllerInputLayer = .base
     @Published private(set) var lastAction = "等待输入"
 
     private enum Keys {
@@ -186,6 +187,7 @@ final class AppModel: ObservableObject {
             timestamp: ProcessInfo.processInfo.systemUptime,
             deadZone: deadZone)
         sessionPhase = mappingEngine.phase.displayName
+        controllerInputLayer = mappingEngine.inputLayer
         if mappingEngine.phase != lastLoggedPhase {
             lastLoggedPhase = mappingEngine.phase
             logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public)")
