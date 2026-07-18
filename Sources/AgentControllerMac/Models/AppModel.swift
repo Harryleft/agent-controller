@@ -457,6 +457,16 @@ final class AppModel: ObservableObject {
                 requestSidebarOpen()
                 return
             }
+        case .submit:
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            // Never degrade to Return: a posted event is not a confirmed
+            // composer submission, and this layer must not inspect text.
+            lastAction = CodexBaseActionPolicy.unavailableDiagnostic(
+                for: action
+            ) ?? "提交 · Unavailable"
+            logger.info("action=submit result=unavailable-no-ui-receipt")
+            return
         default:
             break
         }

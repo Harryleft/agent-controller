@@ -64,10 +64,11 @@ public final class CodexMacAutomation {
             return inject(.returnKey)
         case .submit:
             clearSidebarTaskSelection()
-            // The installed Codex app defaults composerEnterBehavior to
-            // `enter`; users who change that setting need a configurable
-            // submit binding in a future version.
-            return inject(.returnKey)
+            // A directed Return event is only a transport attempt.  Codex
+            // exposes no stable, exact AX state transition for "submitted",
+            // so never inject it and then report success.
+            logger.error("submit blocked reason=no-ui-confirmation-contract")
+            return false
         case .openNewThread:
             clearSidebarTaskSelection()
             return inject(.n, modifiers: .maskCommand)

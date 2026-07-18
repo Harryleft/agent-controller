@@ -69,7 +69,7 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | --- | --- |
 | Menu / ☰ | 启动或置前 Codex |
 | A | 若有已确认的侧边栏候选，则通过唯一 UUID 的 `codex://threads/<uuid>` 深链打开并等待确认；否则确认当前焦点项（Return） |
-| X | 提交输入（Return；依赖 Codex 的 Enter 发送设置） |
+| X | 提交当前输入；当前缺少不读取正文的精确 UI 回执，明确显示 Unavailable，且不投递 Return |
 | Y | 新建任务（Command + N） |
 | B 短按 | 取消或关闭当前界面（Escape） |
 | B 按住 3 秒 | 停止当前任务（Escape，带长按门槛） |
@@ -159,7 +159,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ## 已知边界
 
 - Codex 改动可访问性名称、角色、窗口结构或焦点行为时，LT 会失效并返回未确认；不得新增模糊匹配或坐标点击来掩盖兼容性破坏。
-- 普通动作没有 UI 结果回读。Codex 更新或用户改键后，事件可能被目标进程忽略；尤其 X 依赖当前 Enter 发送设置。
+- X 提交、B 取消/停止仍没有精确 UI 结果回读；当前一律显示 Unavailable，不投递 Return/Escape。后续适配器必须在不读取或记录 composer 正文的前提下，证明同一窗口中的新鲜状态变化。
 - 侧边栏任务选择依赖当前 Codex AX 树、标题与只读 session index 的唯一关联；同名、缺失或不唯一时宁可拒绝，不能用模糊标题匹配、坐标点击或任意深链兜底。
 - GameController 能识别设备不等于 Menu、Home、Share、背键与震动在每个型号上一致；Share 和背键是可选增强能力。
 - 自动化仅允许目标为前台 `com.openai.codex`。不要去掉此前台、同 PID、同窗口和精确控件限制。
