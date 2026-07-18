@@ -2,6 +2,60 @@ import XCTest
 @testable import AgentControllerCore
 
 final class ModelControlStateMachineTests: XCTestCase {
+    func testModelInputIsBlockedByEveryExclusiveLayerAndDictationEdge() {
+        let neutral = ControllerSnapshot(isConnected: true)
+        XCTAssertTrue(
+            ModelControlArbitration.allowsInput(
+                snapshot: neutral,
+                layer: .base,
+                controllerActions: []
+            )
+        )
+
+        for layer in [
+            ControllerInputLayer.agent,
+            .command,
+            .running,
+            .actionPanel
+        ] {
+            XCTAssertFalse(
+                ModelControlArbitration.allowsInput(
+                    snapshot: neutral,
+                    layer: layer,
+                    controllerActions: []
+                )
+            )
+        }
+
+        for action in [ControllerAction.startDictation, .stopDictation] {
+            XCTAssertFalse(
+                ModelControlArbitration.allowsInput(
+                    snapshot: neutral,
+                    layer: .base,
+                    controllerActions: [action]
+                )
+            )
+        }
+    }
+
+    func testModelInputIsBlockedDuringLayerCandidates() {
+        let snapshots = [
+            ControllerSnapshot(isConnected: true, leftTrigger: 0.4),
+            ControllerSnapshot(isConnected: true, rightTrigger: 0.6),
+            ControllerSnapshot(isConnected: true, buttons: [.leftShoulder]),
+            ControllerSnapshot(isConnected: true, buttons: [.rightShoulder])
+        ]
+        for snapshot in snapshots {
+            XCTAssertFalse(
+                ModelControlArbitration.allowsInput(
+                    snapshot: snapshot,
+                    layer: .base,
+                    controllerActions: []
+                )
+            )
+        }
+    }
+
     func testSimpleModeMapsEveryDirectionWithoutCataloguingCapabilities() {
         let store = ModeStore(.simple)
         var machine = ModelControlStateMachine(modeStore: store)

@@ -295,18 +295,26 @@ final class AppModel: ObservableObject {
             refreshWorkspaceCatalogIfNeeded()
         }
 
-        processModelControls(snapshot)
+        processModelControls(snapshot, controllerActions: actions)
 
         for action in actions {
             execute(action)
         }
     }
 
-    private func processModelControls(_ snapshot: ControllerSnapshot) {
+    private func processModelControls(
+        _ snapshot: ControllerSnapshot,
+        controllerActions: [ControllerAction]
+    ) {
         guard bridgeEnabled,
               snapshot.isConnected,
               mappingEngine.phase == .active,
-              automation.isCodexForeground else {
+              automation.isCodexForeground,
+              ModelControlArbitration.allowsInput(
+                snapshot: snapshot,
+                layer: mappingEngine.inputLayer,
+                controllerActions: controllerActions
+              ) else {
             modelControlStateMachine.reset()
             return
         }

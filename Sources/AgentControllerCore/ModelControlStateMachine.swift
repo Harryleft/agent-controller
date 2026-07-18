@@ -69,6 +69,28 @@ public struct ModelControlInput: Equatable, Sendable {
     }
 }
 
+/// Keeps right-stick/R3 ownership below every exclusive controller layer.
+/// App-level model shortcuts must not bypass the core mapper's LT/RT/Y/LB/RB
+/// arbitration merely because they use a separate state machine.
+public enum ModelControlArbitration: Sendable {
+    public static func allowsInput(
+        snapshot: ControllerSnapshot,
+        layer: ControllerInputLayer,
+        controllerActions: [ControllerAction]
+    ) -> Bool {
+        guard layer == .base,
+              snapshot.leftTrigger < ControllerMappingEngine.dictationStartThreshold,
+              snapshot.rightTrigger < ControllerMappingEngine.runningStartThreshold,
+              !snapshot.buttons.contains(.leftShoulder),
+              !snapshot.buttons.contains(.rightShoulder),
+              !controllerActions.contains(.startDictation),
+              !controllerActions.contains(.stopDictation) else {
+            return false
+        }
+        return true
+    }
+}
+
 /// Deterministic model-control state machine. Call `update` from the input
 /// polling loop with a monotonic clock; it owns edge detection, held-direction
 /// repeat, and R3 tap/hold disambiguation, but performs no platform I/O.
