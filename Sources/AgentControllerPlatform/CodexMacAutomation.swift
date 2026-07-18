@@ -91,6 +91,17 @@ public final class CodexMacAutomation {
         case .openModelPicker:
             clearSidebarTaskSelection()
             return inject(.m, modifiers: [.maskControl, .maskShift])
+        case .openPreviousTask, .openNextTask, .selectAgentSlot,
+             .command, .running, .openActionPanel, .closeActionPanel,
+             .actionPanel:
+            // These intents are deliberately modeled before their semantic
+            // adapters are enabled. Never fall back to an arbitrary shortcut:
+            // each adapter must add its own observable confirmation first.
+            clearSidebarTaskSelection()
+            logger.error(
+                "action blocked reason=semantic-adapter-unavailable"
+            )
+            return false
         }
     }
 

@@ -99,6 +99,47 @@ public enum SidebarTaskDirection: String, CaseIterable, Equatable, Sendable {
     case previous, next
 }
 
+/// Input layers are mutually exclusive. They are exposed for deterministic
+/// tests and for the HUD, but never grant platform automation on their own.
+public enum ControllerInputLayer: String, Equatable, Sendable {
+    case base
+    case agent
+    case command
+    case running
+    case actionPanel
+}
+
+public enum AgentSlot: Int, CaseIterable, Equatable, Sendable {
+    case one = 1, two, three, four, five, six
+}
+
+public enum CommandIntent: String, Equatable, Sendable {
+    case toggleFast
+    case approve
+    case decline
+    case fork
+    case dispatch
+    case startPushToTalk
+    case stopPushToTalk
+}
+
+public enum RunningIntent: String, Equatable, Sendable {
+    case steer
+    case queue
+    case stop
+    case fork
+}
+
+public enum ActionPanelIntent: String, Equatable, Sendable {
+    case newTask
+    case historyForward
+    case toggleSidebar
+    case historyBack
+    case requestClearComposerConfirmation
+    case clearComposer
+    case projectContext
+}
+
 public enum ControllerAction: Equatable, Sendable {
     case wakeCodex
     case openSelected
@@ -111,6 +152,29 @@ public enum ControllerAction: Equatable, Sendable {
     case navigate(NavigationDirection)
     case selectSidebarTask(SidebarTaskDirection)
     case openModelPicker
+    case openPreviousTask
+    case openNextTask
+    case selectAgentSlot(AgentSlot)
+    case command(CommandIntent)
+    case running(RunningIntent)
+    case openActionPanel
+    case closeActionPanel
+    case actionPanel(ActionPanelIntent)
+
+    public var inputLayer: ControllerInputLayer {
+        switch self {
+        case .selectAgentSlot:
+            return .agent
+        case .command:
+            return .command
+        case .running:
+            return .running
+        case .openActionPanel, .closeActionPanel, .actionPanel:
+            return .actionPanel
+        default:
+            return .base
+        }
+    }
 }
 
 /// Session states deliberately distinguish a disabled session from a paused
@@ -216,7 +280,12 @@ public struct ControllerMappingEngine: Sendable {
     public static let navigationThreshold = 0.24
     public static let dictationStartThreshold = 0.35
     public static let dictationStopThreshold = 0.20
+    public static let runningStartThreshold = 0.55
+    public static let runningStopThreshold = 0.35
+    public static let shoulderTapDuration: TimeInterval = 0.18
     public static let stopHoldDuration: TimeInterval = 3
+    public static let approveHoldDuration: TimeInterval = 0.5
+    public static let clearComposerConfirmationDuration: TimeInterval = 2.5
 
     public private(set) var session = ControllerSession()
 
@@ -224,15 +293,31 @@ public struct ControllerMappingEngine: Sendable {
     private var previousForeground = false
     private var previousForegroundRequirement = false
     private var previousStickDirection: NavigationDirection?
-    private var previousSidebarModifierActive = false
     private var suppressNavigationUntilDirectionalRelease = false
     private var dictationActive = false
+    private var commandPushToTalkActive = false
+    private var runningLayerActive = false
+    private var leftShoulderPressedAt: TimeInterval?
+    private var rightShoulderPressedAt: TimeInterval?
+    private var leftShoulderLayerActive = false
+    private var rightShoulderLayerActive = false
+    private var commandApprovalPressedAt: TimeInterval?
+    private var commandApprovalEmitted = false
+    private var actionPanelActive = false
+    private var clearComposerRequestedAt: TimeInterval?
     private var cancelStartedAt: TimeInterval?
     private var stopWasEmitted = false
 
     public init() {}
 
     public var phase: ControllerSessionPhase { session.phase }
+    public var inputLayer: ControllerInputLayer {
+        if runningLayerActive { return .running }
+        if actionPanelActive { return .actionPanel }
+        if leftShoulderLayerActive { return .agent }
+        if rightShoulderLayerActive { return .command }
+        return .base
+    }
 
     public mutating func update(
         snapshot: ControllerSnapshot,
@@ -306,44 +391,35 @@ public struct ControllerMappingEngine: Sendable {
         }
 
         var actions: [ControllerAction] = []
-        if pressed(.menu, in: snapshot) { actions.append(.wakeCodex) }
-
         let triggerAction = processDictation(snapshot)
-        if let triggerAction { actions.append(triggerAction) }
-
-        // Push-to-talk owns the input surface until the trigger crosses its
-        // release threshold. This prevents a held LT from leaking face-button
-        // or navigation actions into Codex while dictation is active.
-        if triggerAction == nil && !dictationActive {
-            processCancel(snapshot, now: now, actions: &actions)
-
-            let navigation = navigationAction(
-                snapshot,
-                deadZone: configuredDeadZone
-            )
-            let movesSidebar: Bool
-            if case .selectSidebarTask = navigation {
-                movesSidebar = true
-            } else {
-                movesSidebar = false
+        if let triggerAction {
+            actions.append(triggerAction)
+            if triggerAction == .startDictation {
+                clearLayerState()
             }
+        }
 
-            // A never opens an older candidate in the same sample that moves
-            // the sidebar selection. The user must release and press A again
-            // after the asynchronous focus confirmation finishes.
-            if pressed(.a, in: snapshot), !movesSidebar {
-                actions.append(.openSelected)
-            }
-            if pressed(.x, in: snapshot) { actions.append(.submit) }
-            if pressed(.y, in: snapshot) { actions.append(.openNewThread) }
-            if pressed(.rightThumbstick, in: snapshot) { actions.append(.openModelPicker) }
-            if let navigation {
-                actions.append(navigation)
-            }
+        // LT is exclusive: while recording (and on its start/stop samples),
+        // no held shoulder, face button, or directional input can cross into
+        // another layer when the trigger is released.
+        if triggerAction != nil || dictationActive {
+            absorbInputDuringDictation(snapshot, deadZone: configuredDeadZone)
+        } else if runningLayerActive ||
+            snapshot.rightTrigger >= Self.runningStartThreshold
+        {
+            actions.append(contentsOf: routeRunningLayer(snapshot, now: now))
+        } else if actionPanelActive {
+            actions.append(contentsOf: routeActionPanel(snapshot, now: now))
+            absorbNavigationDuringDictation(snapshot, deadZone: configuredDeadZone)
+        } else if let shoulderActions = routeShoulderLayers(snapshot, now: now) {
+            actions.append(contentsOf: shoulderActions)
+            absorbNavigationDuringDictation(snapshot, deadZone: configuredDeadZone)
         } else {
-            absorbNavigationDuringDictation(
+            routeBaseLayer(
                 snapshot,
-                deadZone: configuredDeadZone
+                now: now,
+                deadZone: configuredDeadZone,
+                actions: &actions
             )
         }
 
@@ -411,46 +487,244 @@ public struct ControllerMappingEngine: Sendable {
         stopWasEmitted = false
     }
 
+    private mutating func routeBaseLayer(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval,
+        deadZone: Double,
+        actions: inout [ControllerAction]
+    ) {
+        if pressed(.menu, in: snapshot) { actions.append(.wakeCodex) }
+        processCancel(snapshot, now: now, actions: &actions)
+
+        if pressed(.a, in: snapshot) { actions.append(.openSelected) }
+        if pressed(.x, in: snapshot) { actions.append(.submit) }
+        if pressed(.y, in: snapshot) {
+            actionPanelActive = true
+            clearComposerRequestedAt = nil
+            actions.append(.openActionPanel)
+            return
+        }
+        if pressed(.rightThumbstick, in: snapshot) {
+            actions.append(.openModelPicker)
+        }
+        if let navigation = navigationAction(snapshot, deadZone: deadZone) {
+            actions.append(navigation)
+        }
+    }
+
+    private mutating func routeRunningLayer(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval
+    ) -> [ControllerAction] {
+        if !runningLayerActive {
+            guard snapshot.rightTrigger >= Self.runningStartThreshold else {
+                return []
+            }
+            runningLayerActive = true
+            cancelStartedAt = nil
+            stopWasEmitted = false
+            // Entering a high-risk layer consumes the current sample so a
+            // face button that was already held cannot become a command.
+            return []
+        }
+
+        guard snapshot.rightTrigger > Self.runningStopThreshold else {
+            runningLayerActive = false
+            cancelStartedAt = nil
+            stopWasEmitted = false
+            return []
+        }
+
+        var actions: [ControllerAction] = []
+        if pressed(.x, in: snapshot) { actions.append(.running(.steer)) }
+        if pressed(.y, in: snapshot) { actions.append(.running(.queue)) }
+        if pressed(.a, in: snapshot) { actions.append(.running(.fork)) }
+        processRunningStop(snapshot, now: now, actions: &actions)
+        return actions
+    }
+
+    private mutating func processRunningStop(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval,
+        actions: inout [ControllerAction]
+    ) {
+        if pressed(.b, in: snapshot) {
+            cancelStartedAt = now
+            stopWasEmitted = false
+            return
+        }
+
+        guard previous.buttons.contains(.b), let startedAt = cancelStartedAt else {
+            return
+        }
+        if snapshot.buttons.contains(.b) {
+            if !stopWasEmitted && now - startedAt >= Self.stopHoldDuration {
+                actions.append(.running(.stop))
+                stopWasEmitted = true
+            }
+            return
+        }
+
+        cancelStartedAt = nil
+        stopWasEmitted = false
+    }
+
+    /// Returns nil only when no shoulder is in a pending, held, or release
+    /// state. An empty action list deliberately captures an unfinished chord.
+    private mutating func routeShoulderLayers(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval
+    ) -> [ControllerAction]? {
+        let leftHeld = snapshot.buttons.contains(.leftShoulder)
+        let rightHeld = snapshot.buttons.contains(.rightShoulder)
+
+        if pressed(.leftShoulder, in: snapshot) {
+            leftShoulderPressedAt = now
+            leftShoulderLayerActive = false
+        }
+        if pressed(.rightShoulder, in: snapshot) {
+            rightShoulderPressedAt = now
+            rightShoulderLayerActive = false
+        }
+
+        if leftHeld {
+            guard let startedAt = leftShoulderPressedAt else { return [] }
+            if !leftShoulderLayerActive,
+               now - startedAt >= Self.shoulderTapDuration {
+                leftShoulderLayerActive = true
+            }
+            guard leftShoulderLayerActive else { return [] }
+            return routeAgentLayer(snapshot)
+        }
+
+        if previous.buttons.contains(.leftShoulder), let startedAt = leftShoulderPressedAt {
+            let wasLayer = leftShoulderLayerActive
+            leftShoulderPressedAt = nil
+            leftShoulderLayerActive = false
+            if !wasLayer && now - startedAt <= Self.shoulderTapDuration {
+                return [.openPreviousTask]
+            }
+            return []
+        }
+
+        if rightHeld {
+            guard let startedAt = rightShoulderPressedAt else { return [] }
+            if !rightShoulderLayerActive,
+               now - startedAt >= Self.shoulderTapDuration {
+                rightShoulderLayerActive = true
+            }
+            guard rightShoulderLayerActive else { return [] }
+            return routeCommandLayer(snapshot, now: now)
+        }
+
+        if previous.buttons.contains(.rightShoulder), let startedAt = rightShoulderPressedAt {
+            let wasLayer = rightShoulderLayerActive
+            rightShoulderPressedAt = nil
+            rightShoulderLayerActive = false
+            commandApprovalPressedAt = nil
+            commandApprovalEmitted = false
+            if commandPushToTalkActive {
+                commandPushToTalkActive = false
+                return [.command(.stopPushToTalk)]
+            }
+            if !wasLayer && now - startedAt <= Self.shoulderTapDuration {
+                return [.openNextTask]
+            }
+            return []
+        }
+
+        return nil
+    }
+
+    private func routeAgentLayer(_ snapshot: ControllerSnapshot) -> [ControllerAction] {
+        let slots: [(ControllerButton, AgentSlot)] = [
+            (.dpadUp, .one), (.dpadRight, .two), (.dpadDown, .three),
+            (.dpadLeft, .four), (.options, .five), (.menu, .six)
+        ]
+        guard let (_, slot) = slots.first(where: { pressed($0.0, in: snapshot) }) else {
+            return []
+        }
+        return [.selectAgentSlot(slot)]
+    }
+
+    private mutating func routeCommandLayer(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval
+    ) -> [ControllerAction] {
+        var actions: [ControllerAction] = []
+        if pressed(.y, in: snapshot) { actions.append(.command(.toggleFast)) }
+        if pressed(.b, in: snapshot) { actions.append(.command(.decline)) }
+        if pressed(.x, in: snapshot) { actions.append(.command(.fork)) }
+        if pressed(.menu, in: snapshot) { actions.append(.command(.dispatch)) }
+
+        if pressed(.options, in: snapshot), !commandPushToTalkActive {
+            commandPushToTalkActive = true
+            actions.append(.command(.startPushToTalk))
+        } else if commandPushToTalkActive && !snapshot.buttons.contains(.options) {
+            commandPushToTalkActive = false
+            actions.append(.command(.stopPushToTalk))
+        }
+
+        if pressed(.a, in: snapshot) {
+            commandApprovalPressedAt = now
+            commandApprovalEmitted = false
+        } else if snapshot.buttons.contains(.a),
+                  let startedAt = commandApprovalPressedAt,
+                  !commandApprovalEmitted,
+                  now - startedAt >= Self.approveHoldDuration {
+            commandApprovalEmitted = true
+            actions.append(.command(.approve))
+        } else if !snapshot.buttons.contains(.a) {
+            commandApprovalPressedAt = nil
+            commandApprovalEmitted = false
+        }
+        return actions
+    }
+
+    private mutating func routeActionPanel(
+        _ snapshot: ControllerSnapshot,
+        now: TimeInterval
+    ) -> [ControllerAction] {
+        if pressed(.y, in: snapshot) || pressed(.b, in: snapshot) {
+            actionPanelActive = false
+            clearComposerRequestedAt = nil
+            return [.closeActionPanel]
+        }
+        if pressed(.dpadUp, in: snapshot) { return [.actionPanel(.newTask)] }
+        if pressed(.dpadRight, in: snapshot) { return [.actionPanel(.historyForward)] }
+        if pressed(.dpadDown, in: snapshot) { return [.actionPanel(.toggleSidebar)] }
+        if pressed(.dpadLeft, in: snapshot) { return [.actionPanel(.historyBack)] }
+        if pressed(.x, in: snapshot) { return [.actionPanel(.projectContext)] }
+
+        if pressed(.a, in: snapshot) {
+            if let requestedAt = clearComposerRequestedAt,
+               now - requestedAt <= Self.clearComposerConfirmationDuration {
+                clearComposerRequestedAt = nil
+                return [.actionPanel(.clearComposer)]
+            }
+            clearComposerRequestedAt = now
+            return [.actionPanel(.requestClearComposerConfirmation)]
+        }
+        if let requestedAt = clearComposerRequestedAt,
+           now - requestedAt > Self.clearComposerConfirmationDuration {
+            clearComposerRequestedAt = nil
+        }
+        return []
+    }
+
     private mutating func navigationAction(
         _ snapshot: ControllerSnapshot,
         deadZone: Double
     ) -> ControllerAction? {
         let dpad = dpadDirection(snapshot)
         let stick = stickDirection(snapshot, deadZone: deadZone)
-        let sidebarModifierActive = snapshot.buttons.contains(.leftShoulder)
         let dpadIsNew = dpad != nil && dpad != dpadDirection(previous)
         let stickIsNew = stick != nil && stick != previousStickDirection
-        defer {
-            previousStickDirection = stick
-            previousSidebarModifierActive = sidebarModifierActive
-        }
+        defer { previousStickDirection = stick }
 
         if suppressNavigationUntilDirectionalRelease {
             guard dpad == nil, stick == nil else { return nil }
             suppressNavigationUntilDirectionalRelease = false
-            return nil
-        }
-
-        // LB creates a separate sidebar-selection layer. It intentionally
-        // consumes every directional input, including left/right, so a held
-        // modifier cannot leak ordinary arrow navigation into Codex.
-        if sidebarModifierActive {
-            if let dpad, (dpadIsNew || !previousSidebarModifierActive),
-               let action = sidebarTaskAction(for: dpad) {
-                return action
-            }
-            if let stick, (stickIsNew || !previousSidebarModifierActive),
-               let action = sidebarTaskAction(for: stick) {
-                return action
-            }
-            return nil
-        }
-
-        // Releasing LB while a direction remains held must not reinterpret the
-        // same physical gesture as ordinary navigation. Require a directional
-        // neutral reading before ordinary navigation resumes.
-        if previousSidebarModifierActive {
-            suppressNavigationUntilDirectionalRelease = dpad != nil || stick != nil
             return nil
         }
 
@@ -467,22 +741,8 @@ public struct ControllerMappingEngine: Sendable {
         let dpad = dpadDirection(snapshot)
         let stick = stickDirection(snapshot, deadZone: deadZone)
         previousStickDirection = stick
-        previousSidebarModifierActive = snapshot.buttons.contains(
-            .leftShoulder
-        )
         if dpad != nil || stick != nil {
             suppressNavigationUntilDirectionalRelease = true
-        }
-    }
-
-    private func sidebarTaskAction(for direction: NavigationDirection) -> ControllerAction? {
-        switch direction {
-        case .up:
-            return .selectSidebarTask(.previous)
-        case .down:
-            return .selectSidebarTask(.next)
-        case .left, .right:
-            return nil
         }
     }
 
@@ -522,14 +782,40 @@ public struct ControllerMappingEngine: Sendable {
 
     private mutating func clearTransientState() {
         previousStickDirection = nil
-        previousSidebarModifierActive = false
         suppressNavigationUntilDirectionalRelease = false
         dictationActive = false
+        clearLayerState()
         cancelStartedAt = nil
         stopWasEmitted = false
     }
 
+    private mutating func clearLayerState() {
+        commandPushToTalkActive = false
+        runningLayerActive = false
+        leftShoulderPressedAt = nil
+        rightShoulderPressedAt = nil
+        leftShoulderLayerActive = false
+        rightShoulderLayerActive = false
+        commandApprovalPressedAt = nil
+        commandApprovalEmitted = false
+        actionPanelActive = false
+        clearComposerRequestedAt = nil
+    }
+
+    private mutating func absorbInputDuringDictation(
+        _ snapshot: ControllerSnapshot,
+        deadZone: Double
+    ) {
+        absorbNavigationDuringDictation(snapshot, deadZone: deadZone)
+        clearLayerState()
+    }
+
     private mutating func drainSafetyActions() -> [ControllerAction] {
-        dictationActive ? [.stopDictation] : []
+        var actions: [ControllerAction] = []
+        if dictationActive { actions.append(.stopDictation) }
+        if commandPushToTalkActive {
+            actions.append(.command(.stopPushToTalk))
+        }
+        return actions
     }
 }

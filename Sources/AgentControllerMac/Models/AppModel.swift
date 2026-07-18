@@ -435,6 +435,14 @@ private extension ControllerAction {
         case .selectSidebarTask(let direction):
             direction == .previous ? "侧边栏上一任务" : "侧边栏下一任务"
         case .openModelPicker: "模型选择"
+        case .openPreviousTask: "上一任务"
+        case .openNextTask: "下一任务"
+        case .selectAgentSlot(let slot): "Agent 槽位 \(slot.rawValue)"
+        case .command(let intent): "Command · \(intent.rawValue)"
+        case .running(let intent): "运行中 · \(intent.rawValue)"
+        case .openActionPanel: "打开动作面板"
+        case .closeActionPanel: "关闭动作面板"
+        case .actionPanel(let intent): "动作面板 · \(intent.rawValue)"
         }
     }
 }
