@@ -85,6 +85,7 @@ final class AppModel: ObservableObject {
         CodexSemanticAction: CodexKeybindingAvailability
     ] = [:]
     private var currentSnapshot = ControllerSnapshot.disconnected
+    private var systemPowerGeneration: UInt64 = 0
     private var dictationDesiredByBridge = false
     private var dictationStartedByBridge = false
     private var dictationNeedsCleanup = false
@@ -147,6 +148,9 @@ final class AppModel: ObservableObject {
         }
         controllerService.onDeviceChange = { [weak self] device in
             self?.updateDevice(device)
+        }
+        controllerService.onSystemPowerBoundary = { [weak self] boundary in
+            self?.handleSystemPowerBoundary(boundary)
         }
         controllerService.start()
 
@@ -294,6 +298,48 @@ final class AppModel: ObservableObject {
 
         for action in actions {
             execute(action)
+        }
+    }
+
+    private func handleSystemPowerBoundary(_ boundary: SystemPowerBoundary) {
+        switch boundary {
+        case let .willSleep(generation):
+            systemPowerGeneration = generation
+            // Force the mapping engine through its established safety drain,
+            // then invalidate all selection/wake work before macOS sleeps.
+            // This is not a GameController delivery and therefore cannot arm
+            // the neutral gate.
+            let dictationRevisionBeforeDrain = dictationRevision
+            process(.disconnected)
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            cancelCodexWakeConfirmation()
+            modelControlStateMachine.reset()
+            // `process(.disconnected)` emits the one normal stop action when
+            // the mapping engine owns LT. If an asynchronous bridge attempt
+            // already owns cleanup but core emitted no action, request that
+            // same stop once; never create a second report or delivery.
+            if dictationRevision == dictationRevisionBeforeDrain {
+                drainBridgeOwnedDictationForSystemSleep()
+            }
+            logger.info(
+                "power boundary=will-sleep epoch=\(generation, privacy: .public) gate=drained"
+            )
+        case let .didWake(generation):
+            systemPowerGeneration = generation
+            // A cached controller snapshot is intentionally not replayed.
+            // Only the service's current-generation value-change callback can
+            // re-enter ControllerMappingEngine's normal neutral gate.
+            currentSnapshot = .disconnected
+            isControllerConnected = false
+            liveInput = "—"
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            cancelCodexWakeConfirmation()
+            modelControlStateMachine.reset()
+            logger.info(
+                "power boundary=did-wake epoch=\(generation, privacy: .public) gate=awaiting-current-delivery"
+            )
         }
     }
 
@@ -828,14 +874,32 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func drainBridgeOwnedDictationForSystemSleep() {
+        guard dictationDesiredByBridge ||
+                dictationStartedByBridge ||
+                dictationNeedsCleanup ||
+                dictationTask != nil else {
+            return
+        }
+        requestDictation(recording: false)
+    }
+
     private func reconcileDictationState() async {
         while dictationDesiredByBridge != dictationStartedByBridge ||
                 (!dictationDesiredByBridge && dictationNeedsCleanup) {
             let recording = dictationDesiredByBridge
             let attemptRevision = dictationRevision
+            let attemptGeneration = systemPowerGeneration
             let result = await automation.setDictation(
                 recording: recording
             )
+
+            // A dictation result may return after macOS wakes. Its input
+            // ownership belongs to the old epoch, so it must not restore
+            // bridge state or overwrite post-wake diagnostics.
+            guard attemptGeneration == systemPowerGeneration else {
+                continue
+            }
 
             if recording && result == .alreadySatisfied {
                 // 听写可能由用户手动启动；桥接没有执行状态转换，因此
