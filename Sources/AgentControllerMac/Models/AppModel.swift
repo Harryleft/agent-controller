@@ -77,6 +77,10 @@ final class AppModel: ObservableObject {
         CodexSemanticAction: CodexKeybindingAvailability
     ] = [:]
     private var currentSnapshot = ControllerSnapshot.disconnected
+    /// Updated only by a GameController delivery, never by the periodic
+    /// hold/foreground timer. This lets the core reject a cached snapshot
+    /// after a silent wireless sleep.
+    private var lastControllerObservationAt: TimeInterval?
     private var dictationDesiredByBridge = false
     private var dictationStartedByBridge = false
     private var dictationNeedsCleanup = false
@@ -132,7 +136,13 @@ final class AppModel: ObservableObject {
         configureCodexKeybindings()
 
         controllerService.onSnapshot = { [weak self] snapshot in
-            self?.process(snapshot)
+            guard let self else { return }
+            if snapshot.isConnected {
+                lastControllerObservationAt = ProcessInfo.processInfo.systemUptime
+            } else {
+                lastControllerObservationAt = nil
+            }
+            process(snapshot)
         }
         controllerService.onDeviceChange = { [weak self] device in
             self?.updateDevice(device)
@@ -246,18 +256,25 @@ final class AppModel: ObservableObject {
         isControllerConnected = snapshot.isConnected
         liveInput = Self.describe(snapshot)
 
+        let now = ProcessInfo.processInfo.systemUptime
+        let inputContinuityEstablished = snapshot.isConnected &&
+            lastControllerObservationAt.map {
+                now - $0 <= ControllerMappingEngine.inputContinuityTimeout
+            } == true
+
         let actions = mappingEngine.update(
             snapshot: snapshot,
             bridgeEnabled: bridgeEnabled,
             onlyWhenCodexForeground: onlyWhenCodexForeground,
             codexIsForeground: automation.isCodexForeground,
-            timestamp: ProcessInfo.processInfo.systemUptime,
+            timestamp: now,
+            inputContinuityEstablished: inputContinuityEstablished,
             deadZone: deadZone)
         sessionPhase = mappingEngine.phase.displayName
         controllerInputLayer = mappingEngine.inputLayer
         if mappingEngine.phase != lastLoggedPhase {
             lastLoggedPhase = mappingEngine.phase
-            logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public)")
+            logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public) inputContinuity=\(inputContinuityEstablished, privacy: .public)")
         }
 
         if !bridgeEnabled ||

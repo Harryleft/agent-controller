@@ -304,6 +304,111 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(engine.update(snapshot: heldA, bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 605), [.openSelected])
     }
 
+    func testSilentWirelessSleepDrainsPTTAndRequiresNeutralBeforeResume() {
+        var engine = activeEngine(foreground: true)
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(leftTrigger: 0.50),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: true,
+                codexIsForeground: true,
+                timestamp: 1
+            ),
+            [.startDictation]
+        )
+
+        // Simulates the periodic timer seeing a cached state after a silent
+        // wireless sleep, without manufacturing any physical input event.
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.a], leftTrigger: 0.50),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: true,
+                codexIsForeground: true,
+                timestamp: 1 + ControllerMappingEngine.inputContinuityTimeout + 1,
+                inputContinuityEstablished: false
+            ),
+            [.stopDictation]
+        )
+        XCTAssertEqual(engine.phase, .waitingForNeutral)
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.a]),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: true,
+                codexIsForeground: true,
+                timestamp: 100,
+                inputContinuityEstablished: true
+            ),
+            []
+        )
+        XCTAssertEqual(engine.phase, .waitingForNeutral)
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: true,
+                codexIsForeground: true,
+                timestamp: 101,
+                inputContinuityEstablished: true
+            ),
+            []
+        )
+        XCTAssertEqual(engine.phase, .active)
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.a]),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: true,
+                codexIsForeground: true,
+                timestamp: 102,
+                inputContinuityEstablished: true
+            ),
+            [.openSelected]
+        )
+    }
+
+    func testSilentWirelessSleepCannotCompleteCachedStopHold() {
+        var engine = activeEngine()
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.b]),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: false,
+                codexIsForeground: false,
+                timestamp: 1
+            ),
+            []
+        )
+
+        // Do not turn a cached B press into a three-second stop after input
+        // continuity has expired. It must be neutralised first.
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(buttons: [.b]),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: false,
+                codexIsForeground: false,
+                timestamp: 1 + ControllerMappingEngine.inputContinuityTimeout + 1,
+                inputContinuityEstablished: false
+            ),
+            []
+        )
+        XCTAssertEqual(engine.phase, .waitingForNeutral)
+        XCTAssertEqual(
+            engine.update(
+                snapshot: snapshot(),
+                bridgeEnabled: true,
+                onlyWhenCodexForeground: false,
+                codexIsForeground: false,
+                timestamp: 100,
+                inputContinuityEstablished: true
+            ),
+            []
+        )
+        XCTAssertEqual(engine.phase, .active)
+    }
+
     func testBShortPressCancelsAndThreeSecondHoldStopsOnce() {
         var engine = activeEngine()
         XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.b]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1), [])

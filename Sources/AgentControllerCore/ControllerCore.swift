@@ -305,6 +305,14 @@ public struct ControllerMappingEngine: Sendable {
     public static let stopHoldDuration: TimeInterval = 3
     public static let approveHoldDuration: TimeInterval = 0.5
     public static let clearComposerConfirmationDuration: TimeInterval = 2.5
+    /// A wireless controller can sleep without macOS immediately delivering
+    /// a disconnect notification. After this much GameController silence,
+    /// cached input must pass the neutral gate again before it can act.
+    ///
+    /// This is a continuity limit, not a claim that the device disconnected:
+    /// the first post-silence press is intentionally sacrificed to prevent a
+    /// stale held state from becoming an action.
+    public static let inputContinuityTimeout: TimeInterval = 60
 
     public private(set) var session = ControllerSession()
 
@@ -344,6 +352,7 @@ public struct ControllerMappingEngine: Sendable {
         onlyWhenCodexForeground: Bool,
         codexIsForeground: Bool,
         timestamp: TimeInterval,
+        inputContinuityEstablished: Bool = true,
         deadZone: Double = 0.24
     ) -> [ControllerAction] {
         let now = timestamp.isFinite ? timestamp : 0
@@ -361,6 +370,18 @@ public struct ControllerMappingEngine: Sendable {
         guard snapshot.isConnected else {
             let cleanup = drainSafetyActions()
             session.lock()
+            clearTransientState()
+            remember(snapshot, foreground: codexIsForeground, required: onlyWhenCodexForeground)
+            return cleanup
+        }
+
+        // AppModel periodically reprocesses the last snapshot for holds and
+        // foreground changes. A stale cached snapshot is never live input.
+        // Drain bridge-owned dictation once, then require a fresh neutral
+        // sample before accepting any post-silence physical edge.
+        guard inputContinuityEstablished else {
+            let cleanup = drainSafetyActions()
+            session.arm()
             clearTransientState()
             remember(snapshot, foreground: codexIsForeground, required: onlyWhenCodexForeground)
             return cleanup
@@ -452,6 +473,7 @@ public struct ControllerMappingEngine: Sendable {
         onlyWhenCodexForeground: Bool,
         codexIsForeground: Bool,
         timestamp: Date,
+        inputContinuityEstablished: Bool = true,
         deadZone: Double = 0.24
     ) -> [ControllerAction] {
         update(
@@ -460,6 +482,7 @@ public struct ControllerMappingEngine: Sendable {
             onlyWhenCodexForeground: onlyWhenCodexForeground,
             codexIsForeground: codexIsForeground,
             timestamp: timestamp.timeIntervalSinceReferenceDate,
+            inputContinuityEstablished: inputContinuityEstablished,
             deadZone: deadZone
         )
     }
