@@ -37,6 +37,29 @@ public final class CodexMacAutomation {
         selectedSidebarThreadID != nil
     }
 
+    /// Activate or launch Codex, then confirm that the same process owns the
+    /// foreground twice.  Request acceptance alone is not a wake result.
+    public func wakeCodexAndConfirm() async -> CodexWakeAutomationResult {
+        let application: NSRunningApplication?
+        if let running = codexApplication {
+            guard running.activate() else { return .unavailable }
+            application = running
+        } else {
+            guard let appURL = codexApplicationURL else { return .unavailable }
+            application = await launchCodex(at: appURL)
+        }
+
+        guard let application,
+              application.bundleIdentifier == Self.codexBundleIdentifier,
+              application.processIdentifier > 0 else {
+            return .unavailable
+        }
+
+        return await confirmForeground(
+            processIdentifier: application.processIdentifier
+        ) ? .foregroundConfirmed : .unavailable
+    }
+
     /// 显示系统权限提示，并返回完整控制权限是否已就绪。
     @discardableResult
     public func requestAuthorization() -> Bool {
@@ -52,8 +75,10 @@ public final class CodexMacAutomation {
     public func execute(_ action: ControllerAction) -> Bool {
         switch action {
         case .wakeCodex:
-            clearSidebarTaskSelection()
-            return activateOrLaunchCodex()
+            // Wake is asynchronous because success requires fresh foreground
+            // observations. Call wakeCodexAndConfirm() instead.
+            logger.error("wake blocked reason=async-confirmation-required")
+            return false
         case .openSelected:
             guard !hasSidebarTaskSelection else {
                 logger.error(
@@ -432,17 +457,35 @@ public final class CodexMacAutomation {
         ).first
     }
 
-    /// 唤醒时只激活或启动，不投递任何输入事件。
-    @discardableResult
-    private func activateOrLaunchCodex() -> Bool {
-        if let application = codexApplication {
-            return application.activate()
+    private func launchCodex(at appURL: URL) async -> NSRunningApplication? {
+        await withCheckedContinuation { continuation in
+            let configuration = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: configuration
+            ) { application, _ in
+                continuation.resume(returning: application)
+            }
         }
+    }
 
-        guard let appURL = codexApplicationURL else { return false }
-        let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, _ in }
-        return true
+    private func confirmForeground(processIdentifier: pid_t) async -> Bool {
+        var tracker = CodexWakeConfirmationTracker()
+        for _ in 0 ..< 40 {
+            if tracker.observe(
+                frontmostBundleIdentifier: NSWorkspace.shared
+                    .frontmostApplication?.bundleIdentifier,
+                frontmostProcessIdentifier: NSWorkspace.shared
+                    .frontmostApplication?.processIdentifier,
+                expectedBundleIdentifier: Self.codexBundleIdentifier,
+                expectedProcessIdentifier: processIdentifier
+            ) {
+                return true
+            }
+            guard !Task.isCancelled else { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
     }
 
     private var codexApplicationURL: URL? {
@@ -470,9 +513,6 @@ public final class CodexMacAutomation {
             return false
         }
 
-        if foregroundCodexApplication == nil {
-            _ = activateOrLaunchCodex()
-        }
         let target = foregroundCodexApplication
         guard let target else {
             logger.error("inject blocked reason=codex-not-foreground-or-running")

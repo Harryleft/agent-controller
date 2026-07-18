@@ -457,6 +457,11 @@ final class AppModel: ObservableObject {
                 requestSidebarOpen()
                 return
             }
+        case .wakeCodex:
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            requestCodexWakeConfirmation()
+            return
         case .submit:
             clearSidebarSelection()
             clearWorkspaceSelection()
@@ -487,6 +492,18 @@ final class AppModel: ObservableObject {
         lastAction = "\(action.displayName) · \(succeeded ? "已执行" : "已阻止")"
         let result = succeeded ? "executed" : "blocked"
         logger.info("action=\(action.displayName, privacy: .public) result=\(result, privacy: .public)")
+    }
+
+    private func requestCodexWakeConfirmation() {
+        lastAction = "置前 Codex · 正在确认"
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await automation.wakeCodexAndConfirm()
+            guard !Task.isCancelled else { return }
+            lastAction = result.diagnostic
+            logger.info("action=wake result=\(result == .foregroundConfirmed ? "confirmed" : "unavailable", privacy: .public)")
+            refreshRuntimeState()
+        }
     }
 
     private func executeActionPanelIntent(_ intent: ActionPanelIntent) {
