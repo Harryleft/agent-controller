@@ -66,6 +66,9 @@ struct ContentView: View {
                 LabeledContent(
                     "兼容层",
                     value: model.controllerCompatibility)
+                LabeledContent(
+                    "Codex 快捷键",
+                    value: model.keybindingStatus)
                 Divider()
                 Text("实时输入")
                     .font(.caption.weight(.semibold))

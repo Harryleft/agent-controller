@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var accessibilityTrusted = false
     @Published private(set) var sessionPhase = "Locked"
     @Published private(set) var controllerInputLayer: ControllerInputLayer = .base
+    @Published private(set) var keybindingStatus = "尚未配置"
     @Published private(set) var lastAction = "等待输入"
 
     private enum Keys {
@@ -92,6 +93,8 @@ final class AppModel: ObservableObject {
         let storedDeadZone = defaults.double(forKey: Keys.deadZone)
         deadZone = storedDeadZone == 0 ? 0.24 : storedDeadZone
 
+        configureCodexKeybindings()
+
         controllerService.onSnapshot = { [weak self] snapshot in
             self?.process(snapshot)
         }
@@ -110,6 +113,28 @@ final class AppModel: ObservableObject {
         }
 
         refreshRuntimeState()
+    }
+
+    private func configureCodexKeybindings() {
+        let result = CodexKeybindingConfigurationService().install()
+        switch result.outcome {
+        case let .updated(backupCreated, conflicts):
+            let base = backupCreated ? "已配置 · 已备份" : "已配置"
+            keybindingStatus = conflicts.isEmpty ? base : "\(base) · 部分冲突"
+        case let .unchanged(conflicts):
+            keybindingStatus = conflicts.isEmpty ? "已配置" : "部分冲突"
+        case .invalidJSON:
+            keybindingStatus = "配置无效 · 未修改"
+        case .backupUnavailable, .ioFailure:
+            keybindingStatus = "配置失败 · 未修改"
+        case .restored:
+            // install() never restores, but keep the UI exhaustive if the
+            // service gains an explicit restore action later.
+            keybindingStatus = "已恢复"
+        }
+        logger.info(
+            "keybindings result=\(self.keybindingStatus, privacy: .public)"
+        )
     }
 
     func requestSystemPermission() {
