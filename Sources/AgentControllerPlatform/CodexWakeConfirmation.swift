@@ -40,3 +40,28 @@ public enum CodexWakeAutomationResult: Equatable, Sendable {
         }
     }
 }
+
+/// Rejects stale asynchronous wake completions after a newer request or a
+/// controller safety gate closes. It carries no application or UI state.
+public struct CodexWakeRequestGate: Sendable {
+    private var revision = 0
+
+    public init() {}
+
+    public mutating func begin() -> Int {
+        revision &+= 1
+        return revision
+    }
+
+    public mutating func invalidate() {
+        revision &+= 1
+    }
+
+    public func accepts(
+        _ token: Int,
+        bridgeEnabled: Bool,
+        controllerConnected: Bool
+    ) -> Bool {
+        token == revision && bridgeEnabled && controllerConnected
+    }
+}

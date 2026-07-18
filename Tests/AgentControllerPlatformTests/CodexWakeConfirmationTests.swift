@@ -52,4 +52,41 @@ final class CodexWakeConfirmationTests: XCTestCase {
             )
         )
     }
+
+    func testWakeRequestGateRejectsSupersededAndClosedGateResults() {
+        var gate = CodexWakeRequestGate()
+        let first = gate.begin()
+        let second = gate.begin()
+
+        XCTAssertFalse(
+            gate.accepts(
+                first,
+                bridgeEnabled: true,
+                controllerConnected: true
+            )
+        )
+        XCTAssertTrue(
+            gate.accepts(
+                second,
+                bridgeEnabled: true,
+                controllerConnected: true
+            )
+        )
+        XCTAssertFalse(
+            gate.accepts(
+                second,
+                bridgeEnabled: false,
+                controllerConnected: true
+            )
+        )
+
+        gate.invalidate()
+        XCTAssertFalse(
+            gate.accepts(
+                second,
+                bridgeEnabled: true,
+                controllerConnected: true
+            )
+        )
+    }
 }

@@ -97,6 +97,8 @@ final class AppModel: ObservableObject {
     private var lastDictationCleanupAttempt: TimeInterval = 0
     private var sidebarTask: Task<Void, Never>?
     private var sidebarRevision = 0
+    private var wakeTask: Task<Void, Never>?
+    private var wakeRequestGate = CodexWakeRequestGate()
     private var workspaceNavigator = CodexWorkspaceCatalogNavigator()
     private var lastWorkspaceCatalogRefreshAt: TimeInterval = 0
     private var timer: Timer?
@@ -291,6 +293,9 @@ final class AppModel: ObservableObject {
             !automation.isCodexForeground {
             clearSidebarSelection()
             clearWorkspaceSelection()
+            if !bridgeEnabled || !snapshot.isConnected {
+                cancelCodexWakeConfirmation()
+            }
         } else if mappingEngine.inputLayer == .agent {
             refreshWorkspaceCatalogIfNeeded()
         }
@@ -524,15 +529,30 @@ final class AppModel: ObservableObject {
     }
 
     private func requestCodexWakeConfirmation() {
+        wakeTask?.cancel()
+        let token = wakeRequestGate.begin()
         lastAction = "置前 Codex · 正在确认"
-        Task { [weak self] in
+        wakeTask = Task { [weak self] in
             guard let self else { return }
             let result = await automation.wakeCodexAndConfirm()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  wakeRequestGate.accepts(
+                    token,
+                    bridgeEnabled: bridgeEnabled,
+                    controllerConnected: currentSnapshot.isConnected
+                  ) else { return }
             lastAction = result.diagnostic
             logger.info("action=wake result=\(result == .foregroundConfirmed ? "confirmed" : "unavailable", privacy: .public)")
             refreshRuntimeState()
+            wakeTask = nil
         }
+    }
+
+    private func cancelCodexWakeConfirmation() {
+        guard wakeTask != nil else { return }
+        wakeTask?.cancel()
+        wakeTask = nil
+        wakeRequestGate.invalidate()
     }
 
     private func executeCommandIntent(_ intent: CommandIntent) {
