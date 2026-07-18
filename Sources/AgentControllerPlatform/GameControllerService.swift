@@ -13,6 +13,8 @@ public final class GameControllerService {
     public var onDeviceChange: ((ControllerDeviceDescriptor?) -> Void)?
 
     private var controller: GCController?
+    private var activeDeviceReducer =
+        ActiveControllerDeviceReducer<ObjectIdentifier>()
     private var notificationTokens: [NSObjectProtocol] = []
     private var lastDiagnosticSignature: String?
     private let logger = Logger(
@@ -42,9 +44,14 @@ public final class GameControllerService {
                 forName: .GCControllerDidDisconnect,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self] notification in
+                // Notification is not Sendable. Reduce it to the immutable
+                // process-local identity before crossing into MainActor.
+                let disconnectedDeviceID = (
+                    notification.object as? GCController
+                ).map(ObjectIdentifier.init)
                 MainActor.assumeIsolated {
-                    self?.handleDisconnectNotification()
+                    self?.handleDisconnectNotification(disconnectedDeviceID)
                 }
             }
         ]
@@ -59,15 +66,38 @@ public final class GameControllerService {
         disconnect()
     }
 
-    private func selectFirstExtendedGamepad(excluding excludedController: GCController? = nil) {
-        guard let candidate = GCController.controllers().first(where: {
-            $0 !== excludedController && $0.extendedGamepad != nil
-        }) else {
-            disconnect()
-            return
+    private func selectFirstExtendedGamepad(
+        excludingDeviceID: ObjectIdentifier? = nil
+    ) {
+        let candidates = GCController.controllers().filter {
+            ObjectIdentifier($0) != excludingDeviceID &&
+                $0.extendedGamepad != nil
         }
+        let candidateIDs = candidates.map(ObjectIdentifier.init)
 
-        guard controller !== candidate else { return }
+        switch activeDeviceReducer.reconcile(availableDeviceIDs: candidateIDs) {
+        case .unchanged, .nonActiveDisconnectIgnored:
+            return
+        case .activeDisconnected:
+            detachCurrentControllerAndPublishDisconnect()
+            selectFirstExtendedGamepad(excludingDeviceID: excludingDeviceID)
+            return
+        case let .activate(deviceID):
+            guard let candidate = candidates.first(where: {
+                ObjectIdentifier($0) == deviceID
+            }) else {
+                // The Core reducer only selects from `candidates`; if that
+                // invariant is ever broken, fail closed rather than attaching
+                // an arbitrary controller.
+                activeDeviceReducer.reset()
+                detachCurrentControllerAndPublishDisconnect()
+                return
+            }
+            attach(candidate)
+        }
+    }
+
+    private func attach(_ candidate: GCController) {
         controller?.extendedGamepad?.valueChangedHandler = nil
         controller = candidate
 
@@ -96,19 +126,31 @@ public final class GameControllerService {
         publishSnapshot(from: candidate)
     }
 
-    private func handleDisconnectNotification() {
-        guard let disconnectedController = controller else {
+    private func handleDisconnectNotification(
+        _ disconnectedDeviceID: ObjectIdentifier?
+    ) {
+        guard let disconnectedDeviceID else {
             selectFirstExtendedGamepad()
             return
         }
-        guard !GCController.controllers().contains(where: { $0 === disconnectedController }) else {
+
+        switch activeDeviceReducer.disconnectNotified(
+            for: disconnectedDeviceID
+        ) {
+        case .nonActiveDisconnectIgnored, .unchanged, .activate(_):
             return
+        case .activeDisconnected:
+            detachCurrentControllerAndPublishDisconnect()
+            selectFirstExtendedGamepad(excludingDeviceID: disconnectedDeviceID)
         }
-        disconnect()
-        selectFirstExtendedGamepad(excluding: disconnectedController)
     }
 
     private func disconnect() {
+        activeDeviceReducer.reset()
+        detachCurrentControllerAndPublishDisconnect()
+    }
+
+    private func detachCurrentControllerAndPublishDisconnect() {
         let hadController = controller != nil || currentDevice != nil
         controller?.extendedGamepad?.valueChangedHandler = nil
         controller = nil
