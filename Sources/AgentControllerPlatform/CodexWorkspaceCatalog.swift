@@ -199,7 +199,6 @@ public struct CodexWorkspaceTask: Equatable, Sendable {
 public struct CodexWorkspaceProject: Equatable, Sendable {
     /// Codex's opaque local project identifier, never a filesystem path.
     public let id: String
-    public let name: String
 }
 
 public struct CodexWorkspaceProjectDirectory: Equatable, Sendable {
@@ -293,8 +292,8 @@ public struct CodexWorkspaceMetadata: Equatable, Sendable {
                 return .unavailable
             }
             let projects = raw.compactMapValues { project -> CodexWorkspaceProject? in
-                guard !project.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-                return .init(id: project.id, name: project.name)
+                guard !project.id.isEmpty else { return nil }
+                return .init(id: project.id)
             }
             return .available(projects)
         }
@@ -332,7 +331,6 @@ public struct CodexWorkspaceMetadata: Equatable, Sendable {
 
         private struct Project: Decodable {
             let id: String
-            let name: String
         }
 
         private struct Assignment: Decodable {

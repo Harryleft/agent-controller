@@ -37,7 +37,7 @@ final class CodexWorkspaceCatalogTests: XCTestCase {
             sessionRecords: [record(1, minute: 4), record(2, minute: 8)],
             metadata: CodexWorkspaceMetadata(
                 projects: .available([
-                    "local-a": .init(id: "local-a", name: "Alpha")
+                    "local-a": .init(id: "local-a")
                 ]),
                 pinnedThreadIDs: .available([uuid(1)]),
                 pinnedProjectIDs: .available(["local-a"]),
@@ -50,7 +50,7 @@ final class CodexWorkspaceCatalogTests: XCTestCase {
         XCTAssertEqual(
             catalog.roots[1].contents,
             .available([.init(
-                project: .init(id: "local-a", name: "Alpha"),
+                project: .init(id: "local-a"),
                 tasks: [task(2, 8)]
             )])
         )
@@ -73,7 +73,7 @@ final class CodexWorkspaceCatalogTests: XCTestCase {
         let catalog = CodexWorkspaceCatalog(
             sessionRecords: [record(1, minute: 1), record(2, minute: 2)],
             metadata: CodexWorkspaceMetadata(
-                projects: .available(["alpha": .init(id: "alpha", name: "Alpha")]),
+                projects: .available(["alpha": .init(id: "alpha")]),
                 pinnedThreadIDs: .available([]),
                 pinnedProjectIDs: .available([]),
                 assignments: .available([uuid(2): "alpha"]),
@@ -145,7 +145,7 @@ final class CodexWorkspaceCatalogTests: XCTestCase {
         XCTAssertEqual(
             catalog.roots[2].contents,
             .available([.init(
-                project: .init(id: "local-a", name: "Alpha"),
+                project: .init(id: "local-a"),
                 tasks: [task(1, 1)]
             )])
         )
