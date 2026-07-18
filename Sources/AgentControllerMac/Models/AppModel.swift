@@ -246,6 +246,20 @@ final class AppModel: ObservableObject {
             }
             requestDictation(recording: false)
             return
+        case .command(.startPushToTalk):
+            clearSidebarSelection()
+            requestDictation(recording: true)
+            return
+        case .command(.stopPushToTalk):
+            if !dictationStartedByBridge &&
+                !dictationNeedsCleanup &&
+                dictationTask == nil {
+                dictationDesiredByBridge = false
+                lastAction = "Command 语音 · 无桥接录音"
+                return
+            }
+            requestDictation(recording: false)
+            return
         case let .selectSidebarTask(direction):
             requestSidebarSelection(direction: direction)
             return

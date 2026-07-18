@@ -169,6 +169,35 @@ final class ControllerMappingEngineTests: XCTestCase {
         )
     }
 
+    func testCommandPushToTalkStopsWhenViewOrShoulderIsReleased() {
+        var engine = activeEngine()
+
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.2),
+            []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder, .options]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.3),
+            [.command(.startPushToTalk)]
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.4),
+            [.command(.stopPushToTalk)]
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.rightShoulder, .options]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.5),
+            [.command(.startPushToTalk)]
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(buttons: [.options]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1.6),
+            [.command(.stopPushToTalk)]
+        )
+    }
+
     func testRunningLayerHasThresholdAndStopRequiresHold() {
         var engine = activeEngine()
 
