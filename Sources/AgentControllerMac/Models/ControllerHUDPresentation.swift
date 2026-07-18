@@ -73,7 +73,8 @@ enum ControllerHUDLayerStatusResolver {
     static func resolve(
         workspaceCatalogAvailable: Bool,
         actionStatus: ControllerHUDStatus,
-        commandStatus: ControllerHUDStatus
+        commandStatus: ControllerHUDStatus,
+        runningStatus: ControllerHUDStatus
     ) -> [ControllerHUDLayer: ControllerHUDStatus] {
         var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
         statuses[.leftShoulder] = workspaceCatalogAvailable
@@ -81,6 +82,7 @@ enum ControllerHUDLayerStatusResolver {
             : .unavailable
         statuses[.action] = actionStatus
         statuses[.rightShoulder] = commandStatus
+        statuses[.rightTrigger] = runningStatus
         return statuses
     }
 }

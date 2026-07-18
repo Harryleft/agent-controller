@@ -88,16 +88,16 @@ final class ControllerHUDPresentationTests: XCTestCase {
         )
     }
 
-    func testCommandLayerStaysUnavailableWithoutCodexReceipt() {
+    func testCommandAndRunningLayersStayUnavailableWithoutCodexReceipt() {
         let statuses = ControllerHUDLayerStatusResolver.resolve(
             workspaceCatalogAvailable: true,
             actionStatus: .unavailable,
-            commandStatus: .unavailable
+            commandStatus: .unavailable,
+            runningStatus: .unavailable
         )
 
         XCTAssertEqual(statuses[.leftShoulder], .confirmed)
         XCTAssertEqual(statuses[.rightShoulder], .unavailable)
-        // RT remains at the fail-closed default until its own layer is wired.
         XCTAssertEqual(statuses[.rightTrigger], .unavailable)
         XCTAssertEqual(statuses[.action], .unavailable)
     }

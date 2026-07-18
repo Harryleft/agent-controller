@@ -35,7 +35,8 @@ struct ControllerHUDHost: View {
         ControllerHUDLayerStatusResolver.resolve(
             workspaceCatalogAvailable: model.workspaceCatalogAvailable,
             actionStatus: model.actionPanelStatus,
-            commandStatus: model.commandLayerStatus
+            commandStatus: model.commandLayerStatus,
+            runningStatus: model.runningLayerStatus
         )
     }
 

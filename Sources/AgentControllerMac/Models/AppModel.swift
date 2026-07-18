@@ -57,10 +57,13 @@ final class AppModel: ObservableObject {
     /// 可用或已确认。
     var actionPanelStatus: ControllerHUDStatus { .unavailable }
 
-    /// RB 的语音操作有独立的、可确认的听写适配器；其余 Command 槽和
-    /// RT Running 动作则没有 Codex 可观察回执。HUD 不能因一个局部路径
-    /// 存在而把整层误标成已确认。
+    /// RB 的语音操作有独立的、可确认的听写适配器；其余 Command 槽没有
+    /// Codex 可观察回执。HUD 不能因一个局部路径存在而把整层误标成已确认。
     var commandLayerStatus: ControllerHUDStatus { .unavailable }
+
+    /// RT Running 动作均没有当前 Codex 的精确 AX 回执，因此该层保持
+    /// fail-closed，即使 Fork 的固定快捷键已实际投递也不改成已确认。
+    var runningLayerStatus: ControllerHUDStatus { .unavailable }
 
     private enum Keys {
         static let bridgeEnabled = "bridgeEnabled"
@@ -422,6 +425,10 @@ final class AppModel: ObservableObject {
             clearSidebarSelection()
             executeCommandIntent(intent)
             return
+        case let .running(intent):
+            clearSidebarSelection()
+            executeRunningIntent(intent)
+            return
         case let .selectSidebarTask(direction):
             clearWorkspaceSelection()
             requestSidebarSelection(direction: direction)
@@ -529,6 +536,14 @@ final class AppModel: ObservableObject {
         }
         executeCodexSemanticRequest(
             .command(action),
+            displayName: intent.displayName,
+            logValue: intent.rawValue
+        )
+    }
+
+    private func executeRunningIntent(_ intent: RunningIntent) {
+        executeCodexSemanticRequest(
+            .running(intent.codexRunningAction),
             displayName: intent.displayName,
             logValue: intent.rawValue
         )
@@ -1004,6 +1019,26 @@ private extension CommandIntent {
         case .dispatch: "发送"
         case .startPushToTalk: "Command 语音开始"
         case .stopPushToTalk: "Command 语音结束"
+        }
+    }
+}
+
+private extension RunningIntent {
+    var codexRunningAction: CodexRunningAction {
+        switch self {
+        case .steer: .steer
+        case .queue: .queue
+        case .stop: .stop
+        case .fork: .fork
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .steer: "Steer"
+        case .queue: "Queue"
+        case .stop: "停止运行"
+        case .fork: "Fork"
         }
     }
 }
