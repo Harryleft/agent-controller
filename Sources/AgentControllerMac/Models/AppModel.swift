@@ -509,10 +509,10 @@ final class AppModel: ObservableObject {
 
         clearSidebarSelection()
         clearWorkspaceSelection()
-        let succeeded = automation.execute(action)
-        lastAction = "\(action.displayName) · \(succeeded ? "已执行" : "已阻止")"
-        let result = succeeded ? "executed" : "blocked"
-        logger.info("action=\(action.displayName, privacy: .public) result=\(result, privacy: .public)")
+        _ = automation.execute(action)
+        lastAction = CodexBaseActionPolicy.unavailableDiagnostic(for: action)
+            ?? "\(action.displayName) · Unavailable"
+        logger.info("action=\(action.displayName, privacy: .public) result=unavailable")
     }
 
     private func requestCodexWakeConfirmation() {

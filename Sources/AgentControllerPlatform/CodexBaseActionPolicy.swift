@@ -9,7 +9,8 @@ import AgentControllerCore
 public enum CodexBaseActionPolicy: Sendable {
     public static func isAvailable(_ action: ControllerAction) -> Bool {
         switch action {
-        case .openSelected, .submit, .cancel, .stopTask:
+        case .openSelected, .submit, .openNewThread, .cancel, .stopTask,
+             .navigate, .openModelPicker:
             false
         default:
             true
@@ -24,6 +25,8 @@ public enum CodexBaseActionPolicy: Sendable {
             "Unavailable · 没有已确认的任务候选"
         case .submit:
             "Unavailable · 缺少提交后的精确 UI 回执"
+        case .openNewThread, .navigate, .openModelPicker:
+            "Unavailable · 遗留快捷键路径已停用"
         case .cancel:
             "Unavailable · 缺少取消后的精确 UI 回执"
         case .stopTask:

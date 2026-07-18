@@ -94,7 +94,8 @@ public final class CodexMacAutomation {
             return false
         case .openNewThread:
             clearSidebarTaskSelection()
-            return inject(.n, modifiers: .maskCommand)
+            logger.error("new thread blocked reason=legacy-shortcut-disabled")
+            return false
         case .cancel, .stopTask:
             clearSidebarTaskSelection()
             // Escape can close a transient view, dismiss an unrelated menu,
@@ -108,9 +109,10 @@ public final class CodexMacAutomation {
             // as proof that Codex actually started or stopped recording.
             logger.error("dictation blocked reason=unconfirmed-shortcut-path")
             return false
-        case let .navigate(direction):
+        case .navigate:
             clearSidebarTaskSelection()
-            return inject(keyCode(for: direction))
+            logger.error("navigation blocked reason=legacy-shortcut-disabled")
+            return false
         case .selectSidebarTask:
             logger.error(
                 "sidebar selection blocked reason=async-confirmation-required"
@@ -118,7 +120,8 @@ public final class CodexMacAutomation {
             return false
         case .openModelPicker:
             clearSidebarTaskSelection()
-            return inject(.m, modifiers: [.maskControl, .maskShift])
+            logger.error("model picker blocked reason=legacy-shortcut-disabled")
+            return false
         case .workspaceCatalog, .questionAnswer,
              .openPreviousTask, .openNextTask, .selectAgentSlot,
              .command, .running, .openActionPanel, .closeActionPanel,

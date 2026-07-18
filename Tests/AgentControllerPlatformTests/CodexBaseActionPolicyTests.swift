@@ -38,4 +38,19 @@ final class CodexBaseActionPolicyTests: XCTestCase {
             "Unavailable · 缺少停止后的精确 UI 回执"
         )
     }
+
+    func testLegacyShortcutFallbacksStayDisabled() {
+        let actions: [ControllerAction] = [
+            .openNewThread,
+            .navigate(.up),
+            .openModelPicker
+        ]
+        for action in actions {
+            XCTAssertFalse(CodexBaseActionPolicy.isAvailable(action))
+            XCTAssertEqual(
+                CodexBaseActionPolicy.unavailableDiagnostic(for: action),
+                "Unavailable · 遗留快捷键路径已停用"
+            )
+        }
+    }
 }
