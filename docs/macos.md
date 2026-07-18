@@ -70,11 +70,12 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | Menu / ☰ | 启动或置前 Codex；仅在同一 Codex PID 连续两次成为前台后报告“已确认” |
 | A | 仅打开已确认的 Catalog / 侧边栏任务候选并等待新鲜 AX 确认；没有候选时明确显示 Unavailable，不投递 Return |
 | X | 提交当前输入；当前缺少不读取正文的精确 UI 回执，明确显示 Unavailable，且不投递 Return |
-| Y | 新建任务（Command + N） |
+| Y | 打开本地 Action 层；六项 Codex 动作当前都因缺少精确 AX 回执而显示 Unavailable，不投递快捷键 |
 | B 短按 | 取消或关闭当前界面；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
 | B 按住 3 秒 | 停止当前任务；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
 | LT 按住 / 松开 | 精确定位并聚焦当前主窗口的听写控件，向 Codex PID 发送 Space，并确认开始 / 结束 |
-| R3 | 打开模型选择器（Control + Shift + M） |
+| 右摇杆（Simple） | 左/右尝试降低/提高 reasoning；下尝试 Fast；仅在固定 F13/F14/F16 绑定实时可用时定向投递，仍显示“未确认 Codex UI”；上（Standard）当前 Unavailable |
+| R3 短按 / 长按 500 ms | 短按仅在 F15 绑定可用时尝试打开模型菜单并显示“未确认”；长按打开 Agent Controller 设置 |
 | 左摇杆 ↑ / ↓ | 移动应用自有的 Workspace Catalog 选择；只保存无标题的 UUID 候选，不打开任务 |
 | 左摇杆 ← / → | 离开 / 进入当前 Catalog 中已选择的项目目录；没有已选择项目则不可用 |
 | L3 | 循环四个根目录：置顶任务、置顶项目、项目、无项目任务 |
@@ -82,8 +83,15 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | 十字键 ← / → | 与左摇杆一致，离开 / 进入当前 Catalog 中已选择的项目目录；不投递方向键 |
 | LB / RB 短按 | 在 Catalog 的无标题最近任务列表中选择上一条 / 下一条；不打开任务 |
 | 按住 LB + 十字键四向 / View / Menu | 选择 Agent 槽位 1–6；HUD 仅显示槽位状态，绝不显示任务标题 |
+| 按住 RB + View | 复用 LT 的精确听写开始 / 结束确认路径 |
+| 按住 RB + X | 仅在 F17 Fork 绑定实时可用时定向投递；明确显示“未确认 Codex UI” |
+| 按住 RB + A / B / Y / Menu | Approve / Decline / Fast / Dispatch 当前没有可验证回执，显示 Unavailable |
+| RT + A | 与 RB + X 相同的 F17 Fork 路径，仍不报告 Codex 已完成 |
+| RT + X / Y / 按住 B 3 秒 | Steer / Queue / Stop 当前没有可验证回执，显示 Unavailable；B 的三秒门槛仍在核心层生效 |
 
 断连、桥接关闭或前台切换会暂停会话；重新接管前必须让按钮、摇杆和扳机回中，避免连接瞬间误触。LT 录音期间切走前台后，应用保留清理责任；返回 Codex 时会优先尝试结束听写。
+
+“已定向投递，未确认 Codex UI”不是成功状态。它只证明固定快捷键配置仍匹配且事件已发往当前前台 Codex PID；HUD 对 Model、RB 和 RT 层仍显示 Unavailable。Advanced 模型模式没有稳定的精确菜单状态合同，因此所有方向当前 fail-closed。
 
 ## Workspace Catalog 选择合同
 
@@ -159,7 +167,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ## 已知边界
 
 - Codex 改动可访问性名称、角色、窗口结构或焦点行为时，LT 会失效并返回未确认；不得新增模糊匹配或坐标点击来掩盖兼容性破坏。
-- X 提交、B 取消/停止仍没有精确 UI 结果回读；当前一律显示 Unavailable，不投递 Return/Escape。后续适配器必须在不读取或记录 composer 正文的前提下，证明同一窗口中的新鲜状态变化。
+- X 提交、B 取消/停止以及 Y Action 动作仍没有精确 UI 结果回读；当前一律显示 Unavailable，不投递 Return/Escape/Command+N。后续适配器必须在不读取或记录 composer 正文的前提下，证明同一窗口中的新鲜状态变化。
 - 侧边栏任务选择依赖当前 Codex AX 树、标题与只读 session index 的唯一关联；同名、缺失或不唯一时宁可拒绝，不能用模糊标题匹配、坐标点击或任意深链兜底。
 - GameController 能识别设备不等于 Menu、Home、Share、背键与震动在每个型号上一致；Share 和背键是可选增强能力。
 - 自动化仅允许目标为前台 `com.openai.codex`。不要去掉此前台、同 PID、同窗口和精确控件限制。
@@ -168,7 +176,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ## 真机验收清单
 
 1. 冷启动时按住任意按钮连接手柄，确认不会触发动作；全部回中后才进入 Active。
-2. 逐一验证 A/B/X/Y、Menu、R3、十字键、左摇杆与 LT；LT 按住后应出现停止按钮，说一句话，松开后应恢复开始按钮并写入转写。
+2. 逐一验证 A/B/X/Y、Menu、R3、十字键、左右摇杆与 LT；A 无候选、B/X 与 Y 内六项必须显示 Unavailable 且不改变 Codex；LT 按住后应出现停止按钮，说一句话，松开后应恢复开始按钮并写入转写。
 3. 以左摇杆移动 Catalog 选择、进出一个项目并循环四根目录；分别短按 LB/RB 及按住 LB 选择槽位 1–6，确认 HUD 没有显示任务标题。Base D-pad 上/下应只报告不可用，不能改变 Catalog 选择或投递方向键。
 4. 对已确认 Catalog 任务按 A，确认 Codex 打开唯一匹配的任务，且日志出现 `open-confirmed`；制造同名、无匹配或候选失效情形时，确认 A 不会打开错误任务。
 5. 撤销辅助功能权限后按 LT，确认应用报告未确认；普通快捷键的授权状态应独立显示。
@@ -176,3 +184,4 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 7. LT 按住期间断开手柄，确认应用暂停并在条件恢复后清理听写状态；Catalog 已有候选时断连、关闭 Bridge 或切出 Codex，确认候选被清除且恢复后必须回中。
 8. 切换到其他前台应用，确认除 Menu 置前外的输入被阻止，且事件不会落入新前台应用。
 9. 新增型号、USB 连接、Share 或背键支持时，单独记录 GameController 身份与端到端证据，不能沿用 2026-07-18 的单设备结论。
+10. 按住 RB 分别测试 View、A/B/X/Y/Menu，再测试 RT+A/X/Y/B；只有 View 的听写状态变化可报告 confirmed，Fork 只能报告 posted-unconfirmed，其余必须 Unavailable。

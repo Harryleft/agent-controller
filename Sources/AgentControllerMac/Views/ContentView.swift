@@ -121,14 +121,14 @@ struct ContentView: View {
         GroupBox {
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 9) {
                 MappingRow(control: "Menu / ☰", action: "置前 Codex")
-                MappingRow(control: "A", action: "打开已确认的侧边栏任务 / 确认焦点项")
-                MappingRow(control: "X", action: "提交输入")
-                MappingRow(control: "Y", action: "新建任务")
-                MappingRow(control: "B", action: "短按取消；按住 3 秒停止")
-                MappingRow(control: "LT", action: "按住说话")
-                MappingRow(control: "右摇杆 / R3", action: "Simple 模型控制；R3 长按 500 ms 打开设置")
-                MappingRow(control: "十字键 / 左摇杆", action: "普通四向导航")
-                MappingRow(control: "LB + ↑ / ↓", action: "选择可见侧边栏任务（不打开）")
+                MappingRow(control: "A", action: "仅打开已确认任务；无候选时 Unavailable")
+                MappingRow(control: "X / B", action: "提交 / 取消 / 停止当前 Unavailable")
+                MappingRow(control: "Y", action: "打开 Action 层；Codex 动作当前 Unavailable")
+                MappingRow(control: "LT / RB + View", action: "按住说话（精确状态确认）")
+                MappingRow(control: "右摇杆 / R3", action: "固定模型键投递但不报成功；R3 长按打开设置")
+                MappingRow(control: "十字键 / 左摇杆", action: "Workspace Catalog；上下问答当前 Unavailable")
+                MappingRow(control: "LB", action: "短按选择最近任务；长按选择 Agent 槽位")
+                MappingRow(control: "RB / RT", action: "Fork 仅投递未确认；其余命令 Unavailable")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(4)
