@@ -38,13 +38,17 @@ final class ActiveControllerDeviceReducerTests: XCTestCase {
         )
     }
 
-    func testMissingActiveDeviceIsFailClosedThenFreshCandidateActivates() {
+    func testInventoryReconciliationMissedDisconnectFailsClosedBeforeReplacement() {
         var reducer = ActiveControllerDeviceReducer<String>()
         XCTAssertEqual(
             reducer.reconcile(availableDeviceIDs: ["xbox-a"]),
             .activate("xbox-a")
         )
 
+        // This is the path used when `GCController.controllers()` no longer
+        // contains the active device but no disconnect notification arrived.
+        // The platform must publish its disconnected snapshot for this first
+        // reduction before calling reconcile again to attach xbox-b.
         XCTAssertEqual(
             reducer.reconcile(availableDeviceIDs: ["xbox-b"]),
             .activeDisconnected

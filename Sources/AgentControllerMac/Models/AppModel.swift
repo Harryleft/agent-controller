@@ -85,11 +85,6 @@ final class AppModel: ObservableObject {
         CodexSemanticAction: CodexKeybindingAvailability
     ] = [:]
     private var currentSnapshot = ControllerSnapshot.disconnected
-    /// Updated only by a GameController delivery, never by the periodic
-    /// hold/foreground timer. This lets the core reject a cached snapshot
-    /// after a silent wireless sleep.
-    private var controllerObservationContinuity =
-        ControllerObservationContinuityTracker()
     private var dictationDesiredByBridge = false
     private var dictationStartedByBridge = false
     private var dictationNeedsCleanup = false
@@ -148,10 +143,6 @@ final class AppModel: ObservableObject {
 
         controllerService.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
-            controllerObservationContinuity.observe(
-                snapshot,
-                at: ProcessInfo.processInfo.systemUptime
-            )
             process(snapshot)
         }
         controllerService.onDeviceChange = { [weak self] device in
@@ -245,6 +236,10 @@ final class AppModel: ObservableObject {
 
         // A periodic update is required for the three-second B hold and for
         // foreground/permission transitions that do not emit controller data.
+        // First reconcile the public GameController inventory. This catches a
+        // missed disconnect notification without misclassifying ordinary idle
+        // time as a controller lifecycle transition.
+        controllerService.reconcileControllerInventory()
         process(currentSnapshot)
         retryDictationCleanupIfNeeded()
     }
@@ -267,8 +262,6 @@ final class AppModel: ObservableObject {
         liveInput = Self.describe(snapshot)
 
         let now = ProcessInfo.processInfo.systemUptime
-        let inputContinuityEstablished = snapshot.isConnected &&
-            controllerObservationContinuity.isContinuous(at: now)
 
         let actions = mappingEngine.update(
             snapshot: snapshot,
@@ -276,13 +269,12 @@ final class AppModel: ObservableObject {
             onlyWhenCodexForeground: onlyWhenCodexForeground,
             codexIsForeground: automation.isCodexForeground,
             timestamp: now,
-            inputContinuityEstablished: inputContinuityEstablished,
             deadZone: deadZone)
         sessionPhase = mappingEngine.phase.displayName
         controllerInputLayer = mappingEngine.inputLayer
         if mappingEngine.phase != lastLoggedPhase {
             lastLoggedPhase = mappingEngine.phase
-            logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public) inputContinuity=\(inputContinuityEstablished, privacy: .public)")
+            logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public)")
         }
 
         if !bridgeEnabled ||

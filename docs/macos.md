@@ -157,7 +157,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 
 该模式只执行 `swift test`、`swift build --product AgentControllerMac` 与 `git diff --check`；不会调用 `pkill`、不会创建/删除/重建 `dist/AgentControllerMac.app`，也不会启动 GUI。它不能与 `--collect-logs` 组合，也不产生物理手柄证据。
 
-核心测试已覆盖：600 秒闲置后的状态不合成新按键、断连/重连时按住按钮必须先回中、LT 在断连或关闭 Bridge 时只产生一次停止清理，以及超过 60 秒未收到新 GameController 快照时强制重新回中。最后一项覆盖“无线手柄静默休眠但系统未发断连通知”的保守路径：首次恢复按键会被吞掉，松开后才重新 Active。它们只验证确定性的快照状态机，不能证明 macOS 从物理 Xbox 手柄唤醒后仍会发送通知、TCC 授权仍有效、或 Codex UI 仍接受动作。
+核心测试已覆盖：长时间 idle 后仍保持 Active 且下一次真实按键不被吞掉、断连/重连时按住按钮必须先回中、LT 在断连或关闭 Bridge 时只产生一次停止清理，以及 active 手柄从 `GCController.controllers()` 清单消失时即使漏掉通知也会先断连再允许候选重连。GameController 没有公开的睡眠/心跳 API；因此本桥接绝不将“60 秒没有输入事件”解释为睡眠。它们只验证确定性的快照状态机，不能证明 macOS 从物理 Xbox 手柄唤醒后仍会发送通知、TCC 授权仍有效、或 Codex UI 仍接受动作。
 
 需要在用户在场时收集短期运行证据，可使用（默认 30 秒，最多 120 秒）：
 
@@ -167,13 +167,14 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 
 该收集器不伪造 GameController 输入、不阻止系统休眠、不删除用户数据；只输出设备连接、Bridge phase/权限 gate 与 action result 的摘要。它主动过滤原始输入与 Codex 内容，不读取或保存 prompt/reply。零条记录只表示该时间窗没有观测到合格事件，不能视为物理验收通过。
 
-系统休眠、蓝牙重连、手柄固件与 TCC 都在自动测试边界之外。因此用户回来后，在 5 分钟内用已连接的 Xbox 完成以下清单：
+系统休眠、蓝牙重连、手柄固件与 TCC 都在自动测试边界之外。连接生命周期同时由 `GCControllerDidConnect` / `GCControllerDidDisconnect` 通知和 `GCController.controllers()` 定期清单核对处理；清单中的正常 idle 不会进入回中门禁，明确断连后才会。若 macOS 既不发通知、手柄又仍留在清单中，公开 API 无法区分“静置”与“睡眠”，不得伪称已检测到睡眠。因此用户回来后，在 5 分钟内用已连接的 Xbox 完成以下清单：
 
 1. 观察应用先进入“等待回中”；先故意按住 A 或 LT，再全部松开，确认没有自动执行动作，回中后才恢复 Active。
 2. 拔掉并重新连接手柄；确认断连期间没有动作，重连后再次要求回中。
-3. 按住 LT 使听写开始后断连或切出 Codex；恢复条件后确认听写被清理，且没有重复停止或遗留录音。
-4. 恢复辅助功能/事件投递与 Codex 麦克风权限后，完成一次 LT 说话、松开、真实转写和停止按钮回读；`posted` 不是成功证据。
-5. 检查短期摘要中有实际的 `connected`、`phase`、权限 gate 与相应 action result；没有这些记录时标注为“未完成物理验收”，不要以自动测试替代。
+3. 保持手柄完全回中并静置超过 60 秒；确认仍为 Active，随后按一次 A 或 LB，确认该真实按键未被回中门禁吞掉。
+4. 按住 LT 使听写开始后断连或切出 Codex；恢复条件后确认听写被清理，且没有重复停止或遗留录音。
+5. 恢复辅助功能/事件投递与 Codex 麦克风权限后，完成一次 LT 说话、松开、真实转写和停止按钮回读；`posted` 不是成功证据。
+6. 检查短期摘要中有实际的 `connected`、`phase`、权限 gate 与相应 action result；没有这些记录时标注为“未完成物理验收”，不要以自动测试替代。
 
 ## 已知边界
 

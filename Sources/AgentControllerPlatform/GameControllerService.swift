@@ -66,6 +66,17 @@ public final class GameControllerService {
         disconnect()
     }
 
+    /// Reconciles the active device against GameController's current
+    /// controller inventory. This is deliberately lifecycle-only: it never
+    /// manufactures an input snapshot or treats a quiet controller as asleep.
+    ///
+    /// Call this periodically in addition to observing connect/disconnect
+    /// notifications, as Apple's public API specifies both mechanisms for
+    /// connection lifecycle tracking.
+    public func reconcileControllerInventory() {
+        selectFirstExtendedGamepad()
+    }
+
     private func selectFirstExtendedGamepad(
         excludingDeviceID: ObjectIdentifier? = nil
     ) {
