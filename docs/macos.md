@@ -27,7 +27,7 @@ Apple 在 2026-01-19 更新的兼容清单包括：
 
 | 日期 | GameController 识别 | 已验证范围 |
 | --- | --- | --- |
-| 2026-07-18 | vendor `Xbox Wireless Controller`、product `Xbox One`、`GCXboxGamepad=true` | 连接与回中、LT 按住开始/松开结束、真实说话转写、A 确认 |
+| 2026-07-18 | vendor `Xbox Wireless Controller`、product `Xbox One`、`GCXboxGamepad=true` | 连接与回中、LT 按住开始/松开结束、真实说话转写、A 确认；LB + 上/下选择多个可见任务、A 对三个不同脱敏任务身份完成深链打开与 AX 确认；松开 LB 后普通方向导航正常 |
 
 `productCategory` 是系统暴露的分类字符串，不足以反推精确硬件型号或代次；因此不能把本次记录扩大成 Model 1708、Series、Elite、USB 等未观察结论。
 
@@ -68,16 +68,26 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | Xbox 输入 | macOS Codex 动作 |
 | --- | --- |
 | Menu / ☰ | 启动或置前 Codex |
-| A | 确认 / 打开当前焦点项（Return） |
+| A | 若有已确认的侧边栏候选，则通过唯一 UUID 的 `codex://threads/<uuid>` 深链打开并等待确认；否则确认当前焦点项（Return） |
 | X | 提交输入（Return；依赖 Codex 的 Enter 发送设置） |
 | Y | 新建任务（Command + N） |
 | B 短按 | 取消或关闭当前界面（Escape） |
 | B 按住 3 秒 | 停止当前任务（Escape，带长按门槛） |
 | LT 按住 / 松开 | 精确定位并聚焦当前主窗口的听写控件，向 Codex PID 发送 Space，并确认开始 / 结束 |
 | R3 | 打开模型选择器（Control + Shift + M） |
-| 十字键或左摇杆 | 向当前 Codex 控件发送方向键 |
+| 十字键或左摇杆（未按 LB） | 向当前 Codex 控件发送普通四向导航键 |
+| LB + 十字键上/下或左摇杆上/下 | 选择当前可见侧边栏中的上一个/下一个任务候选；只改变精确 AX 焦点，不打开任务 |
 
 断连、桥接关闭或前台切换会暂停会话；重新接管前必须让按钮、摇杆和扳机回中，避免连接瞬间误触。LT 录音期间切走前台后，应用保留清理责任；返回 Codex 时会优先尝试结束听写。
+
+## 侧边栏任务选择合同
+
+1. 只有按住 LB 再按十字键或左摇杆的上/下方向，才进入侧边栏任务候选移动；未按 LB 的四向输入始终是普通导航。LB 层中的左/右不会泄漏成普通方向键。
+2. 候选仅来自当前前台 Codex 的可见侧边栏 AX 树。每次移动都重新确认精确候选与同一窗口焦点；移动只选中候选，绝不打开任务。
+3. 任务身份只读本机 `~/.codex/session_index.jsonl` 的最小字段：UUID、标题的单向摘要和更新时间。完整标题只在本次匹配时短暂使用，不写入控制器状态、磁盘或日志；日志仅记录由 UUID 派生的短哈希。
+4. 侧边栏标题必须在 session index 中全局唯一地对应一个 UUID。同名候选、重复身份、缺少匹配或 AX 树不完整时均拒绝选择和打开，不按标题猜测。
+5. A 仅在存在已确认且尚未失效的侧边栏候选时使用 `codex://threads/<uuid>` 打开。深链被系统接收不算成功；同一任务身份必须在新鲜 AX 工具栏中连续两次出现，才报告“已打开并确认”。没有有效候选时，A 保持普通 Return 确认。
+6. Bridge 关闭、手柄断连、Codex 切出前台、普通导航或其它非侧边栏动作都会取消候选；恢复后必须先回中再重新选择。
 
 ## LT 听写确认合同
 
@@ -98,9 +108,14 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 swift test
 RUN_LIVE_CODEX_DICTATION_TEST=1 \
   swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
+RUN_LIVE_CODEX_SIDEBAR_TEST=1 \
+  swift test --filter LiveCodexSidebarTests/testCurrentCodexSidebarFocusRoundTrip
+# 会依次打开两个不同任务；仅在用户明确允许切换当前 Codex 任务时运行。
+RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
+  swift test --filter LiveCodexSidebarTests/testCurrentCodexSidebarOpenAndConfirm
 ```
 
-实时测试要求 Codex 在前台、两类 Agent Controller 权限与 Codex 麦克风权限就绪，并应在可丢弃的 composer 中运行。它验证当前 Codex AX 开始/停止回路，不经过物理手柄，也不会主动说话，所以不能替代 LT 真实转写验收。
+实时测试要求 Codex 在前台、两类 Agent Controller 权限与 Codex 麦克风权限就绪，并应在可丢弃的 composer 中运行。听写测试验证当前 Codex AX 开始/停止回路，不经过物理手柄，也不会主动说话，所以不能替代 LT 真实转写验收。侧边栏 focus 测试只移动候选；open 测试会打开任务，且只有同一身份连续两次 AX 回读成功才通过。
 
 查看结构化日志：
 
@@ -108,12 +123,13 @@ RUN_LIVE_CODEX_DICTATION_TEST=1 \
 ./script/build_and_run.sh --telemetry
 ```
 
-关键证据包括 `connected ... xboxProfile=true`、`permission postEvent=true accessibility=true`，以及 `dictation target=recording result=confirmed` / `dictation target=idle result=confirmed`。日志中的 `posted` 只表示事件路径执行过，不等于听写已确认。
+关键证据包括 `connected ... xboxProfile=true`、`permission postEvent=true accessibility=true`，以及 `dictation target=recording result=confirmed` / `dictation target=idle result=confirmed`。侧边栏操作应出现 `sidebar operation=select result=selection-confirmed` 或 `sidebar operation=open result=open-confirmed`，其中 `task` 仅为 UUID 派生短哈希。日志中的 `posted` 只表示事件路径执行过，不等于听写或任务打开已确认。
 
 ## 已知边界
 
 - Codex 改动可访问性名称、角色、窗口结构或焦点行为时，LT 会失效并返回未确认；不得新增模糊匹配或坐标点击来掩盖兼容性破坏。
 - 普通动作没有 UI 结果回读。Codex 更新或用户改键后，事件可能被目标进程忽略；尤其 X 依赖当前 Enter 发送设置。
+- 侧边栏任务选择依赖当前 Codex AX 树、标题与只读 session index 的唯一关联；同名、缺失或不唯一时宁可拒绝，不能用模糊标题匹配、坐标点击或任意深链兜底。
 - GameController 能识别设备不等于 Menu、Home、Share、背键与震动在每个型号上一致；Share 和背键是可选增强能力。
 - 自动化仅允许目标为前台 `com.openai.codex`。不要去掉此前台、同 PID、同窗口和精确控件限制。
 - 公开分发仍缺 Developer ID 签名、公证、安装与升级流程；本地稳定签名不能分发。
@@ -122,8 +138,10 @@ RUN_LIVE_CODEX_DICTATION_TEST=1 \
 
 1. 冷启动时按住任意按钮连接手柄，确认不会触发动作；全部回中后才进入 Active。
 2. 逐一验证 A/B/X/Y、Menu、R3、十字键、左摇杆与 LT；LT 按住后应出现停止按钮，说一句话，松开后应恢复开始按钮并写入转写。
-3. 撤销辅助功能权限后按 LT，确认应用报告未确认；普通快捷键的授权状态应独立显示。
-4. 撤销 Codex 麦克风权限，确认问题被识别为 Codex 录音前提，而不是误导用户反复授权 Agent Controller。
-5. LT 按住期间断开手柄，确认应用暂停并在条件恢复后清理听写状态。
-6. 切换到其他前台应用，确认除 Menu 置前外的输入被阻止，且事件不会落入新前台应用。
-7. 新增型号、USB 连接、Share 或背键支持时，单独记录 GameController 身份与端到端证据，不能沿用 2026-07-18 的单设备结论。
+3. 按住 LB，以十字键或左摇杆上/下移动两个可见侧边栏任务候选；每次只移动高亮，不打开任务。松开 LB 后先让方向回中，再验证普通四向导航没有被误触。
+4. 对已确认候选按 A，确认 Codex 打开唯一匹配的任务，且日志出现 `open-confirmed`；制造同名、无匹配或候选失效情形时，确认 A 不会打开错误任务，并保持普通确认语义。
+5. 撤销辅助功能权限后按 LT，确认应用报告未确认；普通快捷键的授权状态应独立显示。
+6. 撤销 Codex 麦克风权限，确认问题被识别为 Codex 录音前提，而不是误导用户反复授权 Agent Controller。
+7. LT 按住期间断开手柄，确认应用暂停并在条件恢复后清理听写状态；侧边栏已有候选时断连、关闭 Bridge 或切出 Codex，确认候选被清除且恢复后必须回中。
+8. 切换到其他前台应用，确认除 Menu 置前外的输入被阻止，且事件不会落入新前台应用。
+9. 新增型号、USB 连接、Share 或背键支持时，单独记录 GameController 身份与端到端证据，不能沿用 2026-07-18 的单设备结论。

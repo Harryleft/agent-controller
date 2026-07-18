@@ -57,6 +57,8 @@ final class AppModel: ObservableObject {
     private var dictationRevision = 0
     private var dictationTask: Task<Void, Never>?
     private var lastDictationCleanupAttempt: TimeInterval = 0
+    private var sidebarTask: Task<Void, Never>?
+    private var sidebarRevision = 0
     private var timer: Timer?
     private var lastPermissionRefreshAt: TimeInterval = 0
     private var lastLoggedPhase: ControllerSessionPhase?
@@ -189,6 +191,13 @@ final class AppModel: ObservableObject {
             logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public)")
         }
 
+        if !bridgeEnabled ||
+            !snapshot.isConnected ||
+            mappingEngine.phase != .active ||
+            !automation.isCodexForeground {
+            clearSidebarSelection()
+        }
+
         for action in actions {
             execute(action)
         }
@@ -197,6 +206,7 @@ final class AppModel: ObservableObject {
     private func execute(_ action: ControllerAction) {
         switch action {
         case .startDictation:
+            clearSidebarSelection()
             requestDictation(recording: true)
             return
         case .stopDictation:
@@ -209,14 +219,80 @@ final class AppModel: ObservableObject {
             }
             requestDictation(recording: false)
             return
+        case let .selectSidebarTask(direction):
+            requestSidebarSelection(direction: direction)
+            return
+        case .openSelected:
+            if sidebarTask != nil {
+                lastAction = "侧边栏候选 · 正在确认，请重新按 A"
+                logger.info(
+                    "sidebar operation=open result=blocked-selection-in-flight"
+                )
+                return
+            }
+            if automation.hasSidebarTaskSelection {
+                requestSidebarOpen()
+                return
+            }
         default:
             break
         }
 
+        clearSidebarSelection()
         let succeeded = automation.execute(action)
         lastAction = "\(action.displayName) · \(succeeded ? "已执行" : "已阻止")"
         let result = succeeded ? "executed" : "blocked"
         logger.info("action=\(action.displayName, privacy: .public) result=\(result, privacy: .public)")
+    }
+
+    private func requestSidebarSelection(
+        direction: SidebarTaskDirection
+    ) {
+        guard sidebarTask == nil else {
+            lastAction = "侧边栏候选 · 上一次移动仍在确认"
+            return
+        }
+
+        sidebarRevision += 1
+        let revision = sidebarRevision
+        lastAction = direction == .previous
+            ? "侧边栏候选 · 正在向上确认"
+            : "侧边栏候选 · 正在向下确认"
+        sidebarTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await automation.selectSidebarTask(
+                direction: direction
+            )
+            guard sidebarRevision == revision else { return }
+            lastAction = result.diagnostic
+            sidebarTask = nil
+        }
+    }
+
+    private func requestSidebarOpen() {
+        guard sidebarTask == nil else { return }
+
+        sidebarRevision += 1
+        let revision = sidebarRevision
+        lastAction = "打开侧边栏任务 · 正在确认"
+        sidebarTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await automation.openSelectedSidebarTask()
+            guard sidebarRevision == revision else { return }
+            lastAction = result.diagnostic
+            sidebarTask = nil
+        }
+    }
+
+    private func clearSidebarSelection() {
+        guard sidebarTask != nil ||
+                automation.hasSidebarTaskSelection else {
+            return
+        }
+        sidebarRevision += 1
+        sidebarTask?.cancel()
+        sidebarTask = nil
+        automation.clearSidebarTaskSelection()
     }
 
     private func requestDictation(recording: Bool) {
@@ -356,6 +432,8 @@ private extension ControllerAction {
         case .startDictation: "开始语音"
         case .stopDictation: "结束语音"
         case .navigate(let direction): "方向 \(direction.displayName)"
+        case .selectSidebarTask(let direction):
+            direction == .previous ? "侧边栏上一任务" : "侧边栏下一任务"
         case .openModelPicker: "模型选择"
         }
     }

@@ -118,13 +118,14 @@ struct ContentView: View {
         GroupBox {
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 9) {
                 MappingRow(control: "Menu / ☰", action: "置前 Codex")
-                MappingRow(control: "A", action: "确认 / 打开焦点项")
+                MappingRow(control: "A", action: "打开已确认的侧边栏任务 / 确认焦点项")
                 MappingRow(control: "X", action: "提交输入")
                 MappingRow(control: "Y", action: "新建任务")
                 MappingRow(control: "B", action: "短按取消；按住 3 秒停止")
                 MappingRow(control: "LT", action: "按住说话")
                 MappingRow(control: "R3", action: "模型选择器")
-                MappingRow(control: "十字键 / 左摇杆", action: "方向导航")
+                MappingRow(control: "十字键 / 左摇杆", action: "普通四向导航")
+                MappingRow(control: "LB + ↑ / ↓", action: "选择可见侧边栏任务（不打开）")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(4)

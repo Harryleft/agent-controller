@@ -93,6 +93,12 @@ public enum NavigationDirection: String, CaseIterable, Equatable, Sendable {
     case up, down, left, right
 }
 
+/// Direction within Codex's visible sidebar task list. This intentionally
+/// differs from editor navigation: selecting a candidate must not open it.
+public enum SidebarTaskDirection: String, CaseIterable, Equatable, Sendable {
+    case previous, next
+}
+
 public enum ControllerAction: Equatable, Sendable {
     case wakeCodex
     case openSelected
@@ -103,6 +109,7 @@ public enum ControllerAction: Equatable, Sendable {
     case startDictation
     case stopDictation
     case navigate(NavigationDirection)
+    case selectSidebarTask(SidebarTaskDirection)
     case openModelPicker
 }
 
@@ -217,6 +224,8 @@ public struct ControllerMappingEngine: Sendable {
     private var previousForeground = false
     private var previousForegroundRequirement = false
     private var previousStickDirection: NavigationDirection?
+    private var previousSidebarModifierActive = false
+    private var suppressNavigationUntilDirectionalRelease = false
     private var dictationActive = false
     private var cancelStartedAt: TimeInterval?
     private var stopWasEmitted = false
@@ -308,13 +317,34 @@ public struct ControllerMappingEngine: Sendable {
         if triggerAction == nil && !dictationActive {
             processCancel(snapshot, now: now, actions: &actions)
 
-            if pressed(.a, in: snapshot) { actions.append(.openSelected) }
+            let navigation = navigationAction(
+                snapshot,
+                deadZone: configuredDeadZone
+            )
+            let movesSidebar: Bool
+            if case .selectSidebarTask = navigation {
+                movesSidebar = true
+            } else {
+                movesSidebar = false
+            }
+
+            // A never opens an older candidate in the same sample that moves
+            // the sidebar selection. The user must release and press A again
+            // after the asynchronous focus confirmation finishes.
+            if pressed(.a, in: snapshot), !movesSidebar {
+                actions.append(.openSelected)
+            }
             if pressed(.x, in: snapshot) { actions.append(.submit) }
             if pressed(.y, in: snapshot) { actions.append(.openNewThread) }
             if pressed(.rightThumbstick, in: snapshot) { actions.append(.openModelPicker) }
-            if let direction = navigationDirection(snapshot, deadZone: configuredDeadZone) {
-                actions.append(.navigate(direction))
+            if let navigation {
+                actions.append(navigation)
             }
+        } else {
+            absorbNavigationDuringDictation(
+                snapshot,
+                deadZone: configuredDeadZone
+            )
         }
 
         remember(snapshot, foreground: codexIsForeground, required: onlyWhenCodexForeground)
@@ -381,17 +411,79 @@ public struct ControllerMappingEngine: Sendable {
         stopWasEmitted = false
     }
 
-    private mutating func navigationDirection(
+    private mutating func navigationAction(
         _ snapshot: ControllerSnapshot,
         deadZone: Double
-    ) -> NavigationDirection? {
+    ) -> ControllerAction? {
         let dpad = dpadDirection(snapshot)
         let stick = stickDirection(snapshot, deadZone: deadZone)
-        defer { previousStickDirection = stick }
+        let sidebarModifierActive = snapshot.buttons.contains(.leftShoulder)
+        let dpadIsNew = dpad != nil && dpad != dpadDirection(previous)
+        let stickIsNew = stick != nil && stick != previousStickDirection
+        defer {
+            previousStickDirection = stick
+            previousSidebarModifierActive = sidebarModifierActive
+        }
 
-        if let dpad, dpad != dpadDirection(previous) { return dpad }
-        guard let stick else { return nil }
-        return stick == previousStickDirection ? nil : stick
+        if suppressNavigationUntilDirectionalRelease {
+            guard dpad == nil, stick == nil else { return nil }
+            suppressNavigationUntilDirectionalRelease = false
+            return nil
+        }
+
+        // LB creates a separate sidebar-selection layer. It intentionally
+        // consumes every directional input, including left/right, so a held
+        // modifier cannot leak ordinary arrow navigation into Codex.
+        if sidebarModifierActive {
+            if let dpad, (dpadIsNew || !previousSidebarModifierActive),
+               let action = sidebarTaskAction(for: dpad) {
+                return action
+            }
+            if let stick, (stickIsNew || !previousSidebarModifierActive),
+               let action = sidebarTaskAction(for: stick) {
+                return action
+            }
+            return nil
+        }
+
+        // Releasing LB while a direction remains held must not reinterpret the
+        // same physical gesture as ordinary navigation. Require a directional
+        // neutral reading before ordinary navigation resumes.
+        if previousSidebarModifierActive {
+            suppressNavigationUntilDirectionalRelease = dpad != nil || stick != nil
+            return nil
+        }
+
+        if let dpad, dpadIsNew { return .navigate(dpad) }
+        guard let stick, stickIsNew else { return nil }
+
+        return .navigate(stick)
+    }
+
+    private mutating func absorbNavigationDuringDictation(
+        _ snapshot: ControllerSnapshot,
+        deadZone: Double
+    ) {
+        let dpad = dpadDirection(snapshot)
+        let stick = stickDirection(snapshot, deadZone: deadZone)
+        previousStickDirection = stick
+        previousSidebarModifierActive = snapshot.buttons.contains(
+            .leftShoulder
+        )
+        if dpad != nil || stick != nil {
+            suppressNavigationUntilDirectionalRelease = true
+        }
+    }
+
+    private func sidebarTaskAction(for direction: NavigationDirection) -> ControllerAction? {
+        switch direction {
+        case .up:
+            return .selectSidebarTask(.previous)
+        case .down:
+            return .selectSidebarTask(.next)
+        case .left, .right:
+            return nil
+        }
     }
 
     private func dpadDirection(_ snapshot: ControllerSnapshot) -> NavigationDirection? {
@@ -430,6 +522,8 @@ public struct ControllerMappingEngine: Sendable {
 
     private mutating func clearTransientState() {
         previousStickDirection = nil
+        previousSidebarModifierActive = false
+        suppressNavigationUntilDirectionalRelease = false
         dictationActive = false
         cancelStartedAt = nil
         stopWasEmitted = false
