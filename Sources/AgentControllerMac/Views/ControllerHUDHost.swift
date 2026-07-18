@@ -36,6 +36,7 @@ struct ControllerHUDHost: View {
         statuses[.leftShoulder] = model.workspaceCatalogAvailable
             ? .confirmed
             : .unavailable
+        statuses[.action] = model.actionPanelStatus
         return statuses
     }
 

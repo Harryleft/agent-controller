@@ -63,6 +63,29 @@ final class ControllerHUDPresentationTests: XCTestCase {
             ControllerHUDCopy.status(.unknown, language: .english),
             "Unknown"
         )
+        XCTAssertEqual(
+            ControllerHUDCopy.actionUnavailableNotice(.chinese),
+            "Action 动作尚无已验证的精确 AX 路径"
+        )
+        XCTAssertEqual(
+            ControllerHUDCopy.actionUnavailableNotice(.english),
+            "Action commands lack a verified exact AX route"
+        )
+    }
+
+    func testActiveActionLayerIsExplicitlyUnavailable() {
+        let presentation = ControllerHUDPresentation.resolve(
+            from: runtimeState(activeLayer: .action)
+        )
+
+        XCTAssertEqual(
+            presentation.layers.first(where: { $0.kind == .action })?.status,
+            .unavailable
+        )
+        XCTAssertEqual(
+            presentation.layers.first(where: { $0.kind == .action })?.isActive,
+            true
+        )
     }
 
     private func runtimeState(

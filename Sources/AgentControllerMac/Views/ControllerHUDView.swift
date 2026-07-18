@@ -23,6 +23,14 @@ struct ControllerHUDView: View {
                 }
             }
 
+            if presentation.layers.contains(
+                where: { $0.kind == .action && $0.isActive }
+            ) {
+                Text(ControllerHUDCopy.actionUnavailableNotice(language))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             Divider()
 
             Text(ControllerHUDCopy.slotsTitle(language))

@@ -80,6 +80,30 @@ public enum CodexActionResult: Equatable, Sendable {
     case unavailable(CodexActionUnavailableReason)
 }
 
+/// Composer verification deliberately carries no text. A future exact-AX
+/// clear adapter may use only this presence transition; it must never retain,
+/// log, or expose the composer body while deciding whether clearing succeeded.
+public enum CodexComposerPresence: Equatable, Sendable {
+    case empty
+    case nonEmpty
+    case ambiguous
+    case unavailable
+}
+
+/// The narrow success predicate for a future clear-composer adapter. It does
+/// not select a control or send input; those require a separate exact AX
+/// contract. This keeps the content-privacy rule independently testable.
+public struct CodexComposerClearVerifier: Sendable {
+    public init() {}
+
+    public func confirmsCleared(
+        before: CodexComposerPresence,
+        after: CodexComposerPresence
+    ) -> Bool {
+        before == .nonEmpty && after == .empty
+    }
+}
+
 /// Strict fail-closed routing for Codex action semantics.
 ///
 /// It is a pure policy component: it never sends input, reads Codex state, or

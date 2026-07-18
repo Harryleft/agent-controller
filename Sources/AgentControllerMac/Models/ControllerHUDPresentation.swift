@@ -127,6 +127,14 @@ enum ControllerHUDCopy {
         language == .chinese ? "Codex 已就绪" : "Codex ready"
     }
 
+    static func actionUnavailableNotice(
+        _ language: ControllerHUDLanguage
+    ) -> String {
+        language == .chinese
+            ? "Action 动作尚无已验证的精确 AX 路径"
+            : "Action commands lack a verified exact AX route"
+    }
+
     static func layer(
         _ layer: ControllerHUDLayer,
         language: ControllerHUDLanguage

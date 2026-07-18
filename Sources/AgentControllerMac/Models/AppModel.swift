@@ -52,6 +52,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var workspaceSlotStatuses: [ControllerHUDStatus] =
         Array(repeating: .unknown, count: CodexWorkspaceCatalog.agentSlotLimit)
 
+    /// Y 面板中的六个 Codex 动作目前都没有经过真实 AX 结构与动作后状态
+    /// 变化的验证。这个状态必须显式传给 HUD，不能把已投递快捷键误报为
+    /// 可用或已确认。
+    var actionPanelStatus: ControllerHUDStatus { .unavailable }
+
     private enum Keys {
         static let bridgeEnabled = "bridgeEnabled"
         static let onlyWhenCodexForeground =
@@ -65,6 +70,7 @@ final class AppModel: ObservableObject {
     private let keybindingConfigurationService:
         CodexKeybindingConfigurationService
     private let modelControlModeStore: UserDefaultsModelControlModeStore
+    private let actionSemantics = CodexActionSemantics()
     private var mappingEngine = ControllerMappingEngine()
     private var modelControlStateMachine: ModelControlStateMachine
     private var modelBindingAvailability: [
@@ -343,6 +349,25 @@ final class AppModel: ObservableObject {
 
     private func execute(_ action: ControllerAction) {
         switch action {
+        case .openActionPanel:
+            clearSidebarSelection()
+            lastAction = "动作面板 · 所有 Codex 动作当前不可用"
+            logger.info("action-panel result=opened-safe-unavailable")
+            return
+        case .closeActionPanel:
+            clearSidebarSelection()
+            lastAction = "动作面板 · 已关闭"
+            logger.info("action-panel result=closed-local")
+            return
+        case .actionPanel(.requestClearComposerConfirmation):
+            // Core 保留双 A 确认语义；本层不读取 composer 正文，也不尝试
+            // 用 Delete、Command+A 或任意快捷键伪造清空成功。
+            lastAction = "清空编辑器 · 再按 A 确认（当前不可用）"
+            logger.info("action-panel action=clear-composer result=awaiting-confirmation")
+            return
+        case let .actionPanel(intent):
+            executeActionPanelIntent(intent)
+            return
         case .startDictation:
             clearSidebarSelection()
             requestDictation(recording: true)
@@ -425,6 +450,31 @@ final class AppModel: ObservableObject {
         lastAction = "\(action.displayName) · \(succeeded ? "已执行" : "已阻止")"
         let result = succeeded ? "executed" : "blocked"
         logger.info("action=\(action.displayName, privacy: .public) result=\(result, privacy: .public)")
+    }
+
+    private func executeActionPanelIntent(_ intent: ActionPanelIntent) {
+        clearSidebarSelection()
+        let request = CodexActionRequest.actionPanel(
+            intent.codexActionPanelAction
+        )
+
+        // `CodexActionSemantics` is a closed, fail-closed policy.  In the
+        // current macOS preview it authorizes no Y action because no adapter
+        // can prove a unique AX control and a fresh post-action state change.
+        // Do not route these intents through `automation.execute`: that path
+        // only proves event posting, not Codex's visible result.
+        switch actionSemantics.resolve(request, evidence: nil) {
+        case .authorized:
+            lastAction = "\(intent.displayName) · 不可用（缺少已接线 AX 适配器）"
+            logger.error(
+                "action-panel action=\(intent.logValue, privacy: .public) result=blocked-no-adapter"
+            )
+        case .unavailable:
+            lastAction = "\(intent.displayName) · 不可用（未验证精确 AX 状态变化）"
+            logger.info(
+                "action-panel action=\(intent.logValue, privacy: .public) result=unavailable-no-verified-route"
+            )
+        }
     }
 
     private func requestSidebarSelection(
@@ -758,6 +808,45 @@ private extension ModelControlAction {
     }
 }
 
+private extension ActionPanelIntent {
+    var codexActionPanelAction: CodexActionPanelAction {
+        switch self {
+        case .newTask: .newTask
+        case .historyBack: .historyBack
+        case .historyForward: .historyForward
+        case .toggleSidebar: .toggleSidebar
+        case .clearComposer: .clearComposerAfterConfirmation
+        case .projectContext: .projectContext
+        case .requestClearComposerConfirmation:
+            preconditionFailure("confirmation is a local panel transition")
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .newTask: "新建任务"
+        case .historyBack: "历史后退"
+        case .historyForward: "历史前进"
+        case .toggleSidebar: "切换侧边栏"
+        case .clearComposer: "清空编辑器"
+        case .projectContext: "项目上下文"
+        case .requestClearComposerConfirmation: "清空编辑器确认"
+        }
+    }
+
+    var logValue: String {
+        switch self {
+        case .newTask: "new-task"
+        case .historyBack: "history-back"
+        case .historyForward: "history-forward"
+        case .toggleSidebar: "toggle-sidebar"
+        case .clearComposer: "clear-composer"
+        case .projectContext: "project-context"
+        case .requestClearComposerConfirmation: "clear-composer-confirmation"
+        }
+    }
+}
+
 private final class UserDefaultsModelControlModeStore: ModelControlModeStoring {
     private static let key = "modelControlMode"
     private let defaults: UserDefaults
@@ -775,7 +864,6 @@ private final class UserDefaultsModelControlModeStore: ModelControlModeStoring {
         ) ?? .simple
     }
 }
-
 private extension ControllerSessionPhase {
     var displayName: String {
         switch self {

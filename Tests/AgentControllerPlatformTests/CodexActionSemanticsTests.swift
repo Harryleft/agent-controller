@@ -80,11 +80,75 @@ final class CodexActionSemanticsTests: XCTestCase {
         }
     }
 
+    func testYActionsRejectInjectedShortcutEvidence() {
+        // This represents a fake adapter claiming that it posted a shortcut.
+        // Posting is not an AX state transition and must never authorize a Y
+        // panel action.
+        let fakeShortcutEvidence = CodexActionEvidence
+            .confirmedFixedKeybinding(.forkThread)
+
+        for action in CodexActionPanelAction.allCases {
+            XCTAssertEqual(
+                semantics.resolve(
+                    .actionPanel(action),
+                    evidence: fakeShortcutEvidence
+                ),
+                .unavailable(.noVerifiedRoute)
+            )
+        }
+    }
+
+    func testFakeAXComposerSnapshotsConfirmOnlyNonemptyToEmpty() {
+        let verifier = CodexComposerClearVerifier()
+        let nonEmpty = FakeComposerAX(
+            matchingControls: 1,
+            isEmpty: false
+        ).presence
+        let empty = FakeComposerAX(
+            matchingControls: 1,
+            isEmpty: true
+        ).presence
+
+        XCTAssertTrue(
+            verifier.confirmsCleared(before: nonEmpty, after: empty)
+        )
+        XCTAssertFalse(
+            verifier.confirmsCleared(before: empty, after: empty)
+        )
+        XCTAssertFalse(
+            verifier.confirmsCleared(
+                before: nonEmpty,
+                after: FakeComposerAX(
+                    matchingControls: 2,
+                    isEmpty: true
+                ).presence
+            )
+        )
+        XCTAssertFalse(
+            verifier.confirmsCleared(
+                before: .unavailable,
+                after: empty
+            )
+        )
+    }
+
     func testClosedRequestCatalogContainsExactlyTheDocumentedActions() {
         XCTAssertEqual(CodexActionRequest.allCases.count, 14)
         XCTAssertEqual(
             Set(CodexActionRequest.allCases.map { String(describing: $0) }).count,
             CodexActionRequest.allCases.count
         )
+    }
+}
+
+private struct FakeComposerAX {
+    let matchingControls: Int
+    let isEmpty: Bool?
+
+    /// The fake contains only presence metadata: unit tests cannot accidentally
+    /// normalize, compare, or persist a composer body.
+    var presence: CodexComposerPresence {
+        guard matchingControls == 1, let isEmpty else { return .ambiguous }
+        return isEmpty ? .empty : .nonEmpty
     }
 }
