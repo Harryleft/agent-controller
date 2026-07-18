@@ -467,6 +467,16 @@ final class AppModel: ObservableObject {
             ) ?? "提交 · Unavailable"
             logger.info("action=submit result=unavailable-no-ui-receipt")
             return
+        case .cancel, .stopTask:
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            // Escape has no semantic receipt for either a short-press cancel
+            // or three-second stop.  Do not close arbitrary Codex UI state.
+            lastAction = CodexBaseActionPolicy.unavailableDiagnostic(
+                for: action
+            ) ?? "Unavailable"
+            logger.info("action=cancel result=unavailable-no-ui-receipt")
+            return
         default:
             break
         }

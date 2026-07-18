@@ -71,8 +71,8 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | A | 若有已确认的侧边栏候选，则通过唯一 UUID 的 `codex://threads/<uuid>` 深链打开并等待确认；否则确认当前焦点项（Return） |
 | X | 提交当前输入；当前缺少不读取正文的精确 UI 回执，明确显示 Unavailable，且不投递 Return |
 | Y | 新建任务（Command + N） |
-| B 短按 | 取消或关闭当前界面（Escape） |
-| B 按住 3 秒 | 停止当前任务（Escape，带长按门槛） |
+| B 短按 | 取消或关闭当前界面；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
+| B 按住 3 秒 | 停止当前任务；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
 | LT 按住 / 松开 | 精确定位并聚焦当前主窗口的听写控件，向 Codex PID 发送 Space，并确认开始 / 结束 |
 | R3 | 打开模型选择器（Control + Shift + M） |
 | 左摇杆 ↑ / ↓ | 移动应用自有的 Workspace Catalog 选择；只保存无标题的 UUID 候选，不打开任务 |

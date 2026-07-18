@@ -17,4 +17,17 @@ final class CodexBaseActionPolicyTests: XCTestCase {
             CodexBaseActionPolicy.unavailableDiagnostic(for: .wakeCodex)
         )
     }
+
+    func testCancelAndStopAreUnavailableWithoutExactPostActionState() {
+        XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.cancel))
+        XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.stopTask))
+        XCTAssertEqual(
+            CodexBaseActionPolicy.unavailableDiagnostic(for: .cancel),
+            "Unavailable · 缺少取消后的精确 UI 回执"
+        )
+        XCTAssertEqual(
+            CodexBaseActionPolicy.unavailableDiagnostic(for: .stopTask),
+            "Unavailable · 缺少停止后的精确 UI 回执"
+        )
+    }
 }

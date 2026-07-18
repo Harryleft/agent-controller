@@ -74,7 +74,11 @@ public final class CodexMacAutomation {
             return inject(.n, modifiers: .maskCommand)
         case .cancel, .stopTask:
             clearSidebarTaskSelection()
-            return inject(.escape)
+            // Escape can close a transient view, dismiss an unrelated menu,
+            // or be ignored.  Without an exact post-action receipt it must
+            // remain unavailable rather than claiming a cancellation.
+            logger.error("cancel blocked reason=no-ui-confirmation-contract")
+            return false
         case .startDictation, .stopDictation:
             // Dictation must use setDictation(recording:). A posted keyboard
             // event has no delivery acknowledgement and must never be treated
