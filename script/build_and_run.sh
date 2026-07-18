@@ -59,6 +59,13 @@ cat >"$INFO_PLIST" <<PLIST
   <true/>
   <key>GCSupportsControllerUserInteraction</key>
   <true/>
+  <key>GCSupportedGameControllers</key>
+  <array>
+    <dict>
+      <key>ProfileName</key>
+      <string>ExtendedGamepad</string>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
@@ -89,6 +96,8 @@ case "$MODE" in
     ;;
   --verify|verify)
     /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :GCSupportsControllerUserInteraction' "$INFO_PLIST")" == "true" ]]
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :GCSupportedGameControllers:0:ProfileName' "$INFO_PLIST")" == "ExtendedGamepad" ]]
     open_app
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null

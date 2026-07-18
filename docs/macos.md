@@ -14,6 +14,11 @@ macOS 端是独立的原生 SwiftUI 实现，不尝试复用 Windows 的 WPF、X
 - Apple GameController 框架可识别的 `GCExtendedGamepad`；
 - 使用 LT 听写时，Codex 自身还要有麦克风权限和可用麦克风。
 
+应用包同时声明 `GCSupportsControllerUserInteraction=true` 与
+`GCSupportedGameControllers/ProfileName=ExtendedGamepad`。这使打包产物与
+实际只接入 `GCExtendedGamepad` 的运行时合同一致；构建验收会直接检查这两个
+Info.plist 键，不能只靠源码注释或连接成功来推断声明正确。
+
 Apple 在 2026-01-19 更新的兼容清单包括：
 
 - Xbox Wireless Controller（蓝牙版，Model 1708）；
