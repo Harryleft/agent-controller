@@ -9,6 +9,7 @@ public enum CodexSemanticAction: String, CaseIterable, Equatable, Hashable, Send
     case openModelPicker
     case toggleFastMode
     case forkThread
+    case submitComposer
 
     public var command: String {
         switch self {
@@ -17,6 +18,7 @@ public enum CodexSemanticAction: String, CaseIterable, Equatable, Hashable, Send
         case .openModelPicker: "composer.openModelPicker"
         case .toggleFastMode: "composer.toggleFastMode"
         case .forkThread: "forkThread"
+        case .submitComposer: "composer.submit"
         }
     }
 
@@ -27,6 +29,7 @@ public enum CodexSemanticAction: String, CaseIterable, Equatable, Hashable, Send
         case .openModelPicker: "F15"
         case .toggleFastMode: "F16"
         case .forkThread: "F17"
+        case .submitComposer: "F18"
         }
     }
 }
@@ -108,7 +111,7 @@ public struct CodexKeybindingConfigurationResult: Equatable, Sendable {
     }
 }
 
-/// Safe, explicit provisioning for five fixed Codex semantic bindings.
+/// Safe, explicit provisioning for six fixed Codex semantic bindings.
 ///
 /// The first successful update preserves the original file as a never-
 /// overwritten backup. All subsequent updates and restores replace only via a

@@ -95,6 +95,8 @@ final class AppModel: ObservableObject {
     private var sidebarTask: Task<Void, Never>?
     private var sidebarRevision = 0
     private var wakeTask: Task<Void, Never>?
+    private var submitTask: Task<Void, Never>?
+    private var submitRevision = 0
     private var wakeRequestGate = CodexWakeRequestGate()
     private var workspaceNavigator = CodexWorkspaceCatalogNavigator()
     private var lastWorkspaceCatalogRefreshAt: TimeInterval = 0
@@ -281,10 +283,23 @@ final class AppModel: ObservableObject {
             logger.info("phase=\(self.sessionPhase, privacy: .public) bridge=\(self.bridgeEnabled, privacy: .public) codexForeground=\(self.automation.isCodexForeground, privacy: .public)")
         }
 
-        if !bridgeEnabled ||
-            !snapshot.isConnected ||
-            mappingEngine.phase != .active ||
-            !automation.isCodexForeground {
+        if CodexComposerSubmitRequestGate.cancelsPendingSubmit(
+            bridgeEnabled: bridgeEnabled,
+            controllerConnected: snapshot.isConnected,
+            sessionPhase: mappingEngine.phase,
+            codexForeground: automation.isCodexForeground,
+            inputLayer: mappingEngine.inputLayer,
+            controllerActions: actions
+        ) {
+            cancelComposerSubmit()
+        }
+
+        if CodexControllerSessionGate.requiresGlobalCleanup(
+            bridgeEnabled: bridgeEnabled,
+            controllerConnected: snapshot.isConnected,
+            sessionPhase: mappingEngine.phase,
+            codexForeground: automation.isCodexForeground
+        ) {
             clearSidebarSelection()
             clearWorkspaceSelection()
             if !bridgeEnabled || !snapshot.isConnected {
@@ -296,7 +311,14 @@ final class AppModel: ObservableObject {
 
         processModelControls(snapshot, controllerActions: actions)
 
+        let actionBatchAdmitsSubmit =
+            CodexComposerSubmitRequestGate.admitsSubmit(in: actions)
         for action in actions {
+            guard action != .submit || actionBatchAdmitsSubmit else {
+                // A non-X action in this same snapshot wins. Do not let loop
+                // ordering recreate a task that the batch gate just canceled.
+                continue
+            }
             execute(action)
         }
     }
@@ -422,6 +444,12 @@ final class AppModel: ObservableObject {
     }
 
     private func execute(_ action: ControllerAction) {
+        // A non-X controller action observed after X wins over the pending
+        // composer receipt, including another action emitted in the same
+        // snapshot. X release emits no action and therefore preserves it.
+        if action != .submit {
+            cancelComposerSubmit()
+        }
         switch action {
         case .openActionPanel:
             clearSidebarSelection()
@@ -542,12 +570,7 @@ final class AppModel: ObservableObject {
         case .submit:
             clearSidebarSelection()
             clearWorkspaceSelection()
-            // Never degrade to Return: a posted event is not a confirmed
-            // composer submission, and this layer must not inspect text.
-            lastAction = CodexBaseActionPolicy.unavailableDiagnostic(
-                for: action
-            ) ?? "提交 · Unavailable"
-            logger.info("action=submit result=unavailable-no-ui-receipt")
+            requestComposerSubmit()
             return
         case .cancel, .stopTask:
             clearSidebarSelection()
@@ -596,6 +619,60 @@ final class AppModel: ObservableObject {
         wakeTask?.cancel()
         wakeTask = nil
         wakeRequestGate.invalidate()
+    }
+
+    private func requestComposerSubmit() {
+        guard submitTask == nil else {
+            lastAction = "提交 · 正在确认"
+            return
+        }
+        guard bridgeEnabled,
+              currentSnapshot.isConnected,
+              mappingEngine.phase == .active,
+              automation.isCodexForeground,
+              mappingEngine.inputLayer == .base else {
+            lastAction = "提交 · Unavailable"
+            return
+        }
+        // Re-read immediately before constructing an automation request. A
+        // successful earlier provisioning never authorizes a now-conflicted
+        // F18 binding.
+        let availability = keybindingConfigurationService.bindingAvailability(
+            for: .submitComposer
+        )
+        guard availability == .available else {
+            lastAction = "提交 · Unavailable"
+            logger.info("action=submit result=unavailable-binding")
+            return
+        }
+        submitRevision += 1
+        let revision = submitRevision
+        lastAction = "提交 · 正在确认"
+        submitTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await automation.submitComposer()
+            guard !Task.isCancelled,
+                  revision == submitRevision,
+                  bridgeEnabled,
+                  currentSnapshot.isConnected,
+                  mappingEngine.phase == .active,
+                  mappingEngine.inputLayer == .base,
+                  automation.isCodexForeground else {
+                return
+            }
+            lastAction = result.diagnostic
+            logger.info(
+                "action=submit result=\(result == .composerClearedConfirmed ? "composer-cleared-confirmed" : "unavailable", privacy: .public)"
+            )
+            submitTask = nil
+        }
+    }
+
+    private func cancelComposerSubmit() {
+        guard submitTask != nil else { return }
+        submitRevision += 1
+        submitTask?.cancel()
+        submitTask = nil
     }
 
     private func executeCommandIntent(_ intent: CommandIntent) {

@@ -152,6 +152,74 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         })
     }
 
+    func testSubmitUsesFixedF18AndAUserConflictLeavesItUnavailable() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        try write([["command": "user.command", "key": "F18"]], to: file)
+
+        let service = CodexKeybindingConfigurationService(fileURL: file)
+        let result = service.install()
+
+        XCTAssertEqual(
+            result.outcome,
+            .updated(
+                backupCreated: true,
+                conflicts: [.keyAlreadyAssigned(action: .submitComposer)]
+            )
+        )
+        XCTAssertEqual(
+            service.bindingAvailability(for: .submitComposer),
+            .unavailable
+        )
+        let entries = try read(file)
+        XCTAssertFalse(entries.contains { item in
+            let binding = item as? [String: Any]
+            return binding?["command"] as? String == "composer.submit"
+        })
+    }
+
+    func testSubmitCommandBoundToAnotherKeyAlsoStaysUnavailable() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        try write([["command": "composer.submit", "key": "F19"]], to: file)
+
+        let service = CodexKeybindingConfigurationService(fileURL: file)
+        XCTAssertEqual(
+            service.install().outcome,
+            .updated(
+                backupCreated: true,
+                conflicts: [.commandAlreadyAssigned(action: .submitComposer)]
+            )
+        )
+        XCTAssertEqual(
+            service.bindingAvailability(for: .submitComposer),
+            .unavailable
+        )
+    }
+
+    func testSubmitBindingCanBecomeConflictedAfterInitialSchedulingCheck() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        let service = CodexKeybindingConfigurationService(fileURL: file)
+        _ = service.install()
+        XCTAssertEqual(
+            service.bindingAvailability(for: .submitComposer),
+            .available
+        )
+
+        var changed = try read(file)
+        changed.append(["command": "user.command", "key": "F18"])
+        try write(changed, to: file)
+
+        XCTAssertEqual(
+            service.bindingAvailability(for: .submitComposer),
+            .unavailable
+        )
+    }
+
     func testInvalidJSONOrMalformedBindingNeverWrites() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

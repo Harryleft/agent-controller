@@ -74,7 +74,7 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | --- | --- |
 | Menu / ☰ | 启动或置前 Codex；仅在同一 Codex PID 连续两次成为前台后报告“已确认” |
 | A | 仅打开已确认的 Catalog / 侧边栏任务候选并等待新鲜 AX 确认；没有候选时明确显示 Unavailable，不投递 Return |
-| X | 提交当前输入；当前缺少不读取正文的精确 UI 回执，明确显示 Unavailable，且不投递 Return |
+| X | 仅在 `composer.submit` 的固定 F18 绑定无冲突、当前前台 Codex 的同一 focused/main 窗口内存在唯一、已聚焦、可编辑的 `AXTextArea` 且 `AXNumberOfCharacters > 0` 时提交；三个阶段必须是同一 AXTextArea identity，投递仅定向该 PID。随后同一 PID/窗口/元素的 composer 必须变为 `0`，才显示“Composer 已清空（已确认）”；这不是 turn 完成。空、歧义、元素焦点或窗口漂移、权限或绑定冲突都显示 Unavailable 且不投递。 |
 | Y | 打开本地 Action 层；六项 Codex 动作当前都因缺少精确 AX 回执而显示 Unavailable，不投递快捷键 |
 | B 短按 | 取消或关闭当前界面；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
 | B 按住 3 秒 | 停止当前任务；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |
@@ -119,6 +119,14 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 
 当前 Codex 的 Electron AXButton 对 `AXPress` 返回成功但不会触发 React 处理器；向 PID 定向投递鼠标事件也不会触发。全局鼠标点击虽可能生效，但会引入坐标和跨应用误触风险，已明确排除。
 
+## X 提交确认合同
+
+1. Agent Controller 只管理官方 `composer.submit` 的固定 `F18`。`keybindings.json` 中任何其他命令占用 F18、该命令已有其它键、或存在重复受管项，都会令 X 不可用；绝不覆盖用户冲突配置，也不回退到 Enter。调度时的检查不视为授权，实际投递前会同步重读并紧邻 `postToPid` 复核；外部进程在这个不可加锁的文件检查后仍可能改写配置，因此不能把它描述为跨进程原子保证。
+2. 提交前只允许读取同一前台 `com.openai.codex` PID、focused/main window identity、唯一 focused + editable `AXTextArea` 的 role/focus/editability 与 `AXNumberOfCharacters`。不读取 `AXValue`、placeholder、标题或任何 prompt/reply，也不记录它们。
+3. 提交前 `AXNumberOfCharacters` 必须大于零，并在投递前立即复核同一 PID、窗口和原 AXTextArea identity；任一空值、多个候选、非文本区、元素焦点或窗口不一致均不投递。
+4. 事件仅通过 `CGEvent.postToPid` 发往已复核的 Codex PID。投递后每次轮询重建 AX root；只有同一 PID、同一窗口、同一 unique focused/editable `AXTextArea` 的字符数变为零，结果才是“Composer 已清空（已确认）”。Electron 替换元素一律 Unavailable。
+5. 这个收据只证明可观察到 composer 已清空，不能证明 Codex 已开始、排队、Steer，或完成一个 turn。自动测试使用内容为空的快照和假适配器，不会读取或操作真实 Codex composer。
+
 ## 自动测试与诊断
 
 常规测试不会操纵当前 Codex；实时测试默认跳过：
@@ -129,6 +137,9 @@ RUN_LIVE_CODEX_DICTATION_TEST=1 \
   swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
 RUN_LIVE_CODEX_SIDEBAR_TEST=1 \
   swift test --filter LiveCodexSidebarTests/testCurrentCodexSidebarFocusRoundTrip
+# 会真实提交当前 composer；仅在可丢弃内容中手动启用。
+RUN_LIVE_CODEX_COMPOSER_SUBMIT_TEST=1 \
+  swift test --filter LiveCodexComposerSubmitTests/testCurrentCodexComposerClearsAfterFixedSubmit
 # 会依次打开两个不同任务；仅在用户明确允许切换当前 Codex 任务时运行。
 RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
   swift test --filter LiveCodexSidebarTests/testCurrentCodexSidebarOpenAndConfirm
@@ -184,7 +195,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ## 已知边界
 
 - Codex 改动可访问性名称、角色、窗口结构或焦点行为时，LT 会失效并返回未确认；不得新增模糊匹配或坐标点击来掩盖兼容性破坏。
-- X 提交、B 取消/停止以及 Y Action 动作仍没有精确 UI 结果回读；当前一律显示 Unavailable，不投递 Return/Escape/Command+N。后续适配器必须在不读取或记录 composer 正文的前提下，证明同一窗口中的新鲜状态变化。
+- B 取消/停止以及 Y Action 动作仍没有精确 UI 结果回读；当前一律显示 Unavailable，不投递 Escape/Command+N。X 只拥有上文的 F18 + composer-cleared 收据，绝不声称 turn 已完成；后续适配器必须在不读取或记录 composer 正文的前提下，证明同一窗口中的新鲜状态变化。
 - 侧边栏任务选择依赖当前 Codex AX 树、标题与只读 session index 的唯一关联；同名、缺失或不唯一时宁可拒绝，不能用模糊标题匹配、坐标点击或任意深链兜底。
 - GameController 能识别设备不等于 Menu、Home、Share、背键与震动在每个型号上一致；Share 和背键是可选增强能力。
 - 自动化仅允许目标为前台 `com.openai.codex`。不要去掉此前台、同 PID、同窗口和精确控件限制。
@@ -193,7 +204,7 @@ RUN_LIVE_CODEX_SIDEBAR_OPEN_TEST=1 \
 ## 真机验收清单
 
 1. 冷启动时按住任意按钮连接手柄，确认不会触发动作；全部回中后才进入 Active。
-2. 逐一验证 A/B/X/Y、Menu、R3、十字键、左右摇杆与 LT；A 无候选、B/X 与 Y 内六项必须显示 Unavailable 且不改变 Codex；LT 按住后应出现停止按钮，说一句话，松开后应恢复开始按钮并写入转写。
+2. 逐一验证 A/B/X/Y、Menu、R3、十字键、左右摇杆与 LT；A 无候选、B 与 Y 内六项必须显示 Unavailable 且不改变 Codex；X 仅在空/歧义/冲突时不投递，并在非空 composer 的同一窗口变空后显示“Composer 已清空（已确认）”，不得把它记为 turn 完成；LT 按住后应出现停止按钮，说一句话，松开后应恢复开始按钮并写入转写。
 3. 以左摇杆移动 Catalog 选择、进出一个项目并循环四根目录；分别短按 LB/RB 及按住 LB 选择槽位 1–6，确认 HUD 没有显示任务标题。Base D-pad 上/下应只报告不可用，不能改变 Catalog 选择或投递方向键。
 4. 对已确认 Catalog 任务按 A，确认 Codex 打开唯一匹配的任务，且日志出现 `open-confirmed`；制造同名、无匹配或候选失效情形时，确认 A 不会打开错误任务。
 5. 撤销辅助功能权限后按 LT，确认应用报告未确认；普通快捷键的授权状态应独立显示。

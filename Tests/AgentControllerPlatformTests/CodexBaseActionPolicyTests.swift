@@ -3,12 +3,9 @@ import XCTest
 @testable import AgentControllerPlatform
 
 final class CodexBaseActionPolicyTests: XCTestCase {
-    func testSubmitIsUnavailableWithoutAFreshUIReceipt() {
-        XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.submit))
-        XCTAssertEqual(
-            CodexBaseActionPolicy.unavailableDiagnostic(for: .submit),
-            "Unavailable · 缺少提交后的精确 UI 回执"
-        )
+    func testSubmitIsReservedForItsDedicatedExactComposerAdapter() {
+        XCTAssertTrue(CodexBaseActionPolicy.isAvailable(.submit))
+        XCTAssertNil(CodexBaseActionPolicy.unavailableDiagnostic(for: .submit))
     }
 
     func testUnrelatedBaseActionsDoNotInheritSubmitUnavailability() {

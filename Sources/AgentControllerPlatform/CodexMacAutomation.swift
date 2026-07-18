@@ -18,8 +18,15 @@ public final class CodexMacAutomation {
         category: "Automation"
     )
     private var selectedSidebarThreadID: UUID?
+    private let keybindingConfigurationService:
+        CodexKeybindingConfigurationService
 
-    public init() {}
+    public init(
+        keybindingConfigurationService: CodexKeybindingConfigurationService =
+            CodexKeybindingConfigurationService()
+    ) {
+        self.keybindingConfigurationService = keybindingConfigurationService
+    }
 
     public var isCodexRunning: Bool {
         codexApplication != nil
@@ -180,6 +187,48 @@ public final class CodexMacAutomation {
             return .unavailable
         }
         return .shortcutPostedWithoutUIConfirmation
+    }
+
+    /// Submit through Codex's fixed `composer.submit` binding only when the
+    /// content-free AX contract can prove that the same focused composer in
+    /// the same foreground window changed from non-empty to empty. This is
+    /// not, and must not be presented as, evidence that a turn completed.
+    public func submitComposer() async -> CodexComposerSubmitAutomationResult {
+        guard !Task.isCancelled,
+              MacInputAuthorization.canPostEvents,
+              MacInputAuthorization.isAccessibilityTrusted,
+              let application = foregroundCodexApplication else {
+            return logComposerSubmitResult(.unavailable)
+        }
+
+        let targetPID = application.processIdentifier
+        guard let before = composerSnapshot(for: targetPID),
+              before.numberOfCharacters > 0,
+              // Re-read directly before dispatch so a focus/window change in
+              // the small discovery-to-event gap fails closed.
+              let immediatelyBeforePost = composerSnapshot(for: targetPID),
+              immediatelyBeforePost.numberOfCharacters > 0,
+              CFEqual(immediatelyBeforePost.window, before.window),
+              CFEqual(immediatelyBeforePost.element, before.element),
+              // This synchronous reread is intentionally adjacent to the
+              // event. A successful check when X was pressed does not make a
+              // later, externally changed keybindings file safe to use.
+              keybindingConfigurationService.bindingAvailability(
+                for: .submitComposer
+              ) == .available,
+              !Task.isCancelled,
+              postKey(.f18, to: targetPID) else {
+            return logComposerSubmitResult(.unavailable)
+        }
+
+        let confirmed = await waitForComposerCleared(
+            expectedWindow: before.window,
+            expectedComposer: before.element,
+            targetPID: targetPID
+        )
+        return logComposerSubmitResult(
+            confirmed ? .composerClearedConfirmed : .unavailable
+        )
     }
 
     /// Move a controller-owned candidate through tasks currently visible in
@@ -1133,6 +1182,82 @@ public final class CodexMacAutomation {
         )
     }
 
+    /// Reads only role, focus, editability, window identity and
+    /// AXNumberOfCharacters. In particular, it never reads AXValue, labels,
+    /// placeholders, prompts, or replies.
+    private func composerSnapshot(
+        for processIdentifier: pid_t
+    ) -> ComposerSnapshot? {
+        guard foregroundCodexApplication?.processIdentifier == processIdentifier else {
+            return nil
+        }
+        let application = AXUIElementCreateApplication(processIdentifier)
+        let focusedWindow = elementAttribute(
+            application,
+            kAXFocusedWindowAttribute
+        )
+        let mainWindow = elementAttribute(application, kAXMainWindowAttribute)
+        let window: AXUIElement
+        switch (focusedWindow, mainWindow) {
+        case let (.some(focused), .some(main)):
+            guard CFEqual(focused, main) else { return nil }
+            window = focused
+        case let (.some(focused), .none):
+            window = focused
+        case let (.none, .some(main)):
+            window = main
+        case (.none, .none):
+            return nil
+        }
+        guard stringAttribute(window, kAXRoleAttribute) ==
+                (kAXWindowRole as String) else {
+            return nil
+        }
+
+        let tree = traversal(of: window, limit: 5_000, maxDepth: 30)
+        guard tree.complete else { return nil }
+        let candidates = tree.entries.compactMap { entry -> ComposerControl? in
+            guard stringAttribute(entry.element, kAXRoleAttribute) ==
+                    (kAXTextAreaRole as String),
+                  boolAttribute(entry.element, kAXFocusedAttribute) == true,
+                  boolAttribute(entry.element, "AXEditable") == true,
+                  let count = integerAttribute(
+                    entry.element,
+                    kAXNumberOfCharactersAttribute
+                  ),
+                  count >= 0 else {
+                return nil
+            }
+            return ComposerControl(
+                element: entry.element,
+                window: window,
+                numberOfCharacters: count
+            )
+        }
+        guard candidates.count == 1 else { return nil }
+        return ComposerSnapshot(control: candidates[0])
+    }
+
+    private func waitForComposerCleared(
+        expectedWindow: AXUIElement,
+        expectedComposer: AXUIElement,
+        targetPID: pid_t
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(2)
+        repeat {
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled,
+                  foregroundCodexApplication?.processIdentifier == targetPID,
+                  let after = composerSnapshot(for: targetPID),
+                  CFEqual(after.window, expectedWindow),
+                  CFEqual(after.element, expectedComposer) else {
+                return false
+            }
+            if after.numberOfCharacters == 0 { return true }
+        } while ContinuousClock.now < deadline
+        return false
+    }
+
     private func dictationControl(
         from element: AXUIElement,
         constrainedTo rootFrame: CGRect?
@@ -1313,6 +1438,16 @@ public final class CodexMacAutomation {
         return result
     }
 
+    private func logComposerSubmitResult(
+        _ result: CodexComposerSubmitAutomationResult
+    ) -> CodexComposerSubmitAutomationResult {
+        let value = result == .composerClearedConfirmed
+            ? "composer-cleared-confirmed"
+            : "unavailable"
+        logger.info("submit result=\(value, privacy: .public)")
+        return result
+    }
+
     private func copyAttribute(
         _ element: AXUIElement,
         _ attribute: String
@@ -1340,6 +1475,13 @@ public final class CodexMacAutomation {
         _ attribute: String
     ) -> Bool? {
         (copyAttribute(element, attribute) as? NSNumber)?.boolValue
+    }
+
+    private func integerAttribute(
+        _ element: AXUIElement,
+        _ attribute: String
+    ) -> Int? {
+        (copyAttribute(element, attribute) as? NSNumber)?.intValue
     }
 
     private func elementAttribute(
@@ -1433,6 +1575,7 @@ public final class CodexMacAutomation {
         // Fork uses the same fixed semantic binding, but only through the
         // dedicated executeForkThread() entrypoint above.
         case .forkThread: .f17
+        case .submitComposer: .f18
         }
     }
 }
@@ -1464,6 +1607,20 @@ private enum DictationState: Equatable {
 private struct DictationControl {
     let kind: CodexDictationControlKind
     let element: AXUIElement
+}
+
+private struct ComposerControl {
+    let element: AXUIElement
+    let window: AXUIElement
+    let numberOfCharacters: Int
+}
+
+private struct ComposerSnapshot {
+    let control: ComposerControl
+
+    var element: AXUIElement { control.element }
+    var window: AXUIElement { control.window }
+    var numberOfCharacters: Int { control.numberOfCharacters }
 }
 
 private struct AXTraversalEntry {
@@ -1578,5 +1735,6 @@ private struct KeyCode: RawRepresentable {
     static let f15 = KeyCode(rawValue: 113)
     static let f16 = KeyCode(rawValue: 106)
     static let f17 = KeyCode(rawValue: 64)
+    static let f18 = KeyCode(rawValue: 79)
 
 }
