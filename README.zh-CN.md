@@ -3,7 +3,9 @@
 [![README in English](https://img.shields.io/badge/README-English-blue.svg)](README.md)
 [![简体中文说明](https://img.shields.io/badge/README-简体中文-red.svg)](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+
+> 平台范围：下方 v0.7 功能说明与 Release 安装步骤描述的是 Windows WPF 实现。macOS v0.1.0 是位于 `Sources/` 的独立、刻意收窄的原生 SwiftUI 预览版，使用 Apple GameController 框架并适配 Xbox 布局手柄。Developer ID 签名的 macOS Release 尚未发布；构建、权限与安全边界见 [macOS 指南](docs/macos.md)。
 
 Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想买吗？但你注意到没有：
 
@@ -34,7 +36,7 @@ Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想�
 
 - 首先是启动 Codex 桌面版，或者在需要时将它置于前台——按菜单键（Xbox 手柄上是 ☰，有的手柄叫 Start 或 `+`）。
 - 用**左摇杆**分层遍历任务目录：上/下在同级条目中移动，右进入项目，左退出项目；焦点在任务上时，按 **A** 打开任务。按下左摇杆（**L3**），可以快速切换置顶任务、置顶项目、项目和未归项目任务四个区域。
-- 用**右摇杆**控制当前模型设置：简易模式下，左/右调整 Power，上选择 Standard，下选择 Fast；短按 **R3** 会打开官方模型列表，可直接选择 5.6 Sol Max 等模型。高级模式下（⚠️ 目前仍不够顺畅），左/右切换 Model、Effort 和 Speed，上/下调整当前选项。
+- 用**右摇杆**控制当前模型设置：简易模式下，左/右调整 Power，上选择 Standard，下选择 Fast；短按 **R3** 会打开官方模型列表，可直接选择 5.6 Sol Max 等模型。高级模式在 Windows v0.7 中仍不够顺畅，左/右切换 Model、Effort 和 Speed，上/下调整当前选项。
 - 如何录音？一直按住 **LT**，松开就是停止。
 - 如何发送？按 **X**。
 - 如果想删除输入框的全部内容，按 **Y**，再按两次 **A** 确认。
@@ -50,7 +52,7 @@ Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想�
 
 > ⚠️ **安全提示——使用前请读**
 >
-> 这个实验性 v0.7 原型由 **Codex 使用 GPT-5.6 Sol 在一天内完成**，没有经过独立的人工代码或安全审计。Codex 更新可能改变快捷键或辅助功能树，导致 UI Automation 失效或误操作；程序也未签名。请先审查源码，只用非关键任务试用，并自行承担全部风险。应用在你机器上会做的事：
+> 这个实验性 Windows v0.7 原型由 **Codex 使用 GPT-5.6 Sol 在一天内完成**，没有经过独立的人工代码或安全审计。Codex 更新可能改变快捷键或辅助功能树，导致 UI Automation 失效或误操作；Windows Release 未签名。macOS 预览版使用项目本地自签名开发身份，但没有 Developer ID 签名或公证。请先审查源码，只用非关键任务试用，并自行承担全部风险。Windows 应用在你机器上会做的事：
 >
 > - 向 **Codex 窗口**发送键盘快捷键与 UI Automation 指令；手柄输入默认要求 Codex 位于前台，关闭“桥接”后会阻止手柄控制；
 > - 读取 `~/.codex` 下的本机任务数据；启用降级绑定时，可以向 Codex 的快捷键配置追加 F17/F18/F20/F22；
@@ -60,7 +62,7 @@ Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想�
 >
 > Agent Controller 是独立实验项目，与 OpenAI、Codex、Work Louder 没有隶属、授权或背书关系。
 
-### 使用要求
+### Windows v0.7 使用要求
 
 - Windows 10（build 19041+）或 Windows 11
 - 已安装 Codex 桌面版
@@ -69,7 +71,7 @@ Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想�
 
 当前实测设备为 8BitDo Ultimate 2、Xbox Series 和 Flydigi Vader 4 Pro。其他 XInput 手柄能否正常使用取决于其 XInput 实现，仍需真机验证。
 
-### 从 Release 下载安装
+### 安装 Windows Release
 
 1. 到 [Releases](../../releases) 下载最新 zip。
 2. 解压到任意目录，运行 `AgentController.exe`。
@@ -79,7 +81,7 @@ Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想�
 
 v0.7.0-hotfix Windows 包为自包含版本，不需要另行安装 .NET Runtime。
 
-### 按键速查
+### Windows v0.7 按键速查
 
 #### 基础层
 
@@ -121,27 +123,50 @@ v0.7.0-hotfix Windows 包为自包含版本，不需要另行安装 .NET Runtime
 
 右摇杆保持同一方向时，会在约两秒内逐渐加速：第一次动作立即发生，之后重复速度平滑上升；倾斜越深，最终速度越快。
 
-如果当前选择提供 Speed、但不提供简易 Power——目前 Sol Max 就是这样——Agent Controller 会询问是否切换模式：按 **A** 切换到高级模式，按 **B** 保持简易模式；无论如何，Standard/Fast 仍然可用。拒绝后，同一个模型/强度组合不会反复提示，直到当前选择发生变化。
+如果当前选择提供 Speed、但不提供简易 Power——Windows v0.7 验收基线中的 Sol Max 就是这样——Agent Controller 会询问是否切换模式：按 **A** 切换到高级模式，按 **B** 保持简易模式；无论如何，Standard/Fast 仍然可用。拒绝后，同一个模型/强度组合不会反复提示，直到当前选择发生变化。
 
 界面支持简体中文、English，或跟随 Windows 显示语言。
 
 更完整的实现状态和边界情况，请参阅 [v0.7 手柄指令清单](public/docs/controller-command-reference-v0.7.md)与 [v0.7 版本说明](public/docs/release-v0.7.md)。
 
-### 已知限制
+### Windows v0.7 已知限制
 
 - 大部分动作依赖 Codex 当前版本的快捷键与辅助功能树，Codex 界面更新可能导致功能失效。
 - 简易模型列表使用官方命令快捷键；快捷键冲突会被拦截。首次写入后若 Codex 未热加载，请重启一次 Codex。
 - 单元测试和 Release 编译通过，不能替代针对当前 Codex 版本、账户、模型选项的真实手柄端到端测试。
-- Agent 槽位目前取实时快照中的前六个任务；Agent 与 Command 槽位都还不能由用户配置。
+- Windows v0.7 的 Agent 槽位取实时快照中的前六个任务；该版本的 Agent 与 Command 槽位不能由用户配置。
 - v0.7 尚未包含双拉锁定免手持录音、基础层 View 操作、Plan 模式手柄路由和虚拟 HID 桥接。
 
 ### 可以不止 Codex
 
-目前只适配了 Codex，但项目中的手柄、能力和 Agent 目标层已经为增加其他适配器留出了空间。如果确实有需求，Agent Controller 将来可以扩展到命令行工作流，以及 Claude Code 等其他编程 Agent。
+截至 2026 年 7 月 18 日，项目只适配了 Codex，但手柄、能力和 Agent 目标层已经为增加其他适配器留出空间。如果确实有需求，Agent Controller 将来可以扩展到命令行工作流，以及 Claude Code 等其他编程 Agent。
 
-这类扩展需要为目标工具单独实现任务发现、命令执行、状态检测和安全检查。当前对 Codex 的兼容，不代表现在已经兼容这些工具。
+这类扩展需要为目标工具单独实现任务发现、命令执行、状态检测和安全检查。对 Codex 的兼容不代表已经兼容这些工具。
 
 ### 从源码构建
+
+#### macOS 源码预览
+
+需要 macOS 14+、Xcode 16 或更高版本和 Swift：
+
+```bash
+./script/setup_local_signing.sh
+swift test
+./script/build_and_run.sh --verify
+```
+
+初始化命令可幂等重复执行，用于让本机重建保持稳定的 TCC 身份。构建脚本会生成并本地签名 `dist/AgentControllerMac.app`；该预览版未做 Developer ID 签名或公证。普通手柄快捷键需要 macOS 事件投递权限；LT 语音还需要辅助功能权限和 Codex 自身的麦克风权限，用于定位并聚焦当前“听写/停止听写”控件，只向 Codex 发送 Space，再确认状态，不依赖 `Ctrl+Shift+D`。
+
+实时测试默认跳过，只验证当前 Codex 的辅助功能开始/停止回路；它不经过物理手柄，也不能证明真实说话已经转写：
+
+```bash
+RUN_LIVE_CODEX_DICTATION_TEST=1 \
+  swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
+```
+
+具体按键、已验证硬件证据、授权步骤和已知缺口见 [macOS 指南](docs/macos.md)。
+
+#### Windows v0.7
 
 先安装 .NET 9 SDK，然后运行：
 
@@ -165,18 +190,21 @@ dotnet test app.Tests/AgentController.Tests.csproj -c Release
 
 思路上，模拟 Micro 的交互协议会更快，更少错误。但是GPT 5.6 Sol会一直拒绝，说什么这样不稳定，不如界面UIA。而它“稳定”界面的方法是加700到1400ms时延，不是人能忍受的操作。为了抢时间，我先让它继续这样搞。
 
-直到今天早上我没忍住批评了它，因为右摇杆调模型这个功能，实在花了太久了。大概是“你都做错了五次以上了，还在这强调UIA好呢？？？你要用Micro的协议，早就做好了，那还用在这犟”。然后它终于开始模拟 Micro。
+2026 年 7 月 17 日早上，我没忍住批评了它，因为右摇杆调模型这个功能，实在花了太久了。大概是“你都做错了五次以上了，还在这强调UIA好呢？？？你要用Micro的协议，早就做好了，那还用在这犟”。然后它终于开始模拟 Micro。
 
 ### 仓库结构
 
 仓库中的主要路径为：
 
-- `app/` —— Windows WPF 应用，也是运行时行为的事实来源；
-- `app.Tests/` —— 手柄输入、本地化、导航、桥接安全和 Codex 集成策略的回归测试；
-- `scripts/` —— 可复现的 Release 封包脚本；
-- `docs/` —— 交互规范，以及进行中的设计和咨询记录；
+- `app/` 与 `app.Tests/` —— Windows WPF 运行时及其回归测试；
+- `Package.swift`、`Sources/` 与 `Tests/` —— 原生 macOS 运行时及其单元/实时测试 target；
+- `scripts/` —— 可复现的 Windows Release 封包脚本；
+- `script/` —— macOS 签名、构建、运行与诊断脚本；
+- `docs/macos.md` —— macOS 构建、权限、安全与真机验收的权威入口；
+- `docs/` —— 有版本范围的 Windows 交互规范和实验契约；
 - `public/docs/` —— 面向使用者的指令清单、版本说明和实验计划；
-- `todo.md` —— 路线图和验证备忘。
+- `AGENTS.md` —— 平台边界与工程红线；
+- `todo.md` —— 只保留尚未完成的路线图和验证事项。
 
 ### 致谢
 

@@ -30,11 +30,11 @@ response:
   turnId: string
 ```
 
-本机 Codex 0.144.1 生成的精确类型：
+本机 Codex 0.144.1 生成的精确类型位于未随仓库分发的本地分析目录：
 
-- [TurnSteerParams.ts](codex-app-server-schema-0.144.1/typescript/v2/TurnSteerParams.ts)
-- [TurnSteerResponse.ts](codex-app-server-schema-0.144.1/typescript/v2/TurnSteerResponse.ts)
-- [完整 V2 JSON Schema](codex-app-server-schema-0.144.1/json-schema/codex_app_server_protocol.v2.schemas.json)
+- `codex-app-server-schema-0.144.1/typescript/v2/TurnSteerParams.ts`
+- `codex-app-server-schema-0.144.1/typescript/v2/TurnSteerResponse.ts`
+- `codex-app-server-schema-0.144.1/json-schema/codex_app_server_protocol.v2.schemas.json`
 
 `expectedTurnId` 是必填的，必须指向当前正在运行的 turn。
 
@@ -57,9 +57,7 @@ OpenAI.Codex 26.707.12708.0
 C:\Program Files\WindowsApps\OpenAI.Codex_26.707.12708.0_x64__2p2nqsd0c76g0
 ```
 
-主包：
-
-- [app.asar](<C:/Program Files/WindowsApps/OpenAI.Codex_26.707.12708.0_x64__2p2nqsd0c76g0/app/resources/app.asar>)
+主包：`C:\Program Files\WindowsApps\OpenAI.Codex_26.707.12708.0_x64__2p2nqsd0c76g0\app\resources\app.asar`
 
 包内关键位置：
 
@@ -73,15 +71,15 @@ webview/assets/codex-micro-signals-DPWNMrvO.js
 .vite/build/codex-micro-service-CR6sUcZG.js
 ```
 
-已提取的便于阅读版本：
+未随仓库分发的本地提取目录：
 
-- [device-kit-oai README](codex-micro-inspect/oai/README.md)
-- [RPC 类型声明](codex-micro-inspect/oai/rpc_api_oai.d.ts)
-- [RPC 实现](codex-micro-inspect/oai/rpc_api_oai.js)
-- [Codex Micro 动作目录](codex-micro-inspect/renderer/codex-micro-layout-Dxjuzn6Z.js)
-- [输入与命令分发](codex-micro-inspect/renderer/codex-micro-bridge-D90_rd6W.js)
-- [Codex Micro 设置界面](codex-micro-inspect/renderer/codex-micro-settings-DzSPVLRQ.js)
-- [设备连接服务](codex-micro-inspect/service/codex-micro-service-CR6sUcZG.js)
+- `codex-micro-inspect/oai/README.md`
+- `codex-micro-inspect/oai/rpc_api_oai.d.ts`
+- `codex-micro-inspect/oai/rpc_api_oai.js`
+- `codex-micro-inspect/renderer/codex-micro-layout-Dxjuzn6Z.js`
+- `codex-micro-inspect/renderer/codex-micro-bridge-D90_rd6W.js`
+- `codex-micro-inspect/renderer/codex-micro-settings-DzSPVLRQ.js`
+- `codex-micro-inspect/service/codex-micro-service-CR6sUcZG.js`
 
 重要区别：`settings.codexMicro.*` 只是界面本地化 ID，不是协议方法或动作 ID。实际桌面动作名称在 `codex-micro-layout-*.js` 中。
 
@@ -98,15 +96,15 @@ webview/assets/codex-micro-signals-DPWNMrvO.js
 
 ### 5. 当前项目对应实现
 
-- [v0.4a 语义与频率规范](../docs/interaction-spec-v0.4-controller-mapping.md)
-- [v0.4b 实体手柄映射](../docs/interaction-spec-v0.4b-physical-controller-mapping.md)
+- [v0.4a 语义与频率规范](../../docs/interaction-spec-v0.4-controller-mapping.md)
+- [v0.4b 实体手柄映射](../../docs/interaction-spec-v0.4b-physical-controller-mapping.md)
 - [v0.7 当前手柄指令清单](controller-command-reference-v0.7.md)
 - [v0.7 发布说明与风险](release-v0.7.md)
-- [LogicalInput.cs](../app/Controllers/LogicalInput.cs)
-- [BuiltInControllerProfiles.cs](../app/Controllers/BuiltInControllerProfiles.cs)
-- [XInputNative.cs](../app/Native/XInputNative.cs)
-- [XInputService.cs](../app/Services/XInputService.cs)
-- [CodexKeybindingService.cs](../app/Services/CodexKeybindingService.cs)
-- [CodexComposerService.cs](../app/Services/CodexComposerService.cs)
+- [LogicalInput.cs](../../app/Controllers/LogicalInput.cs)
+- [BuiltInControllerProfiles.cs](../../app/Controllers/BuiltInControllerProfiles.cs)
+- [XInputNative.cs](../../app/Native/XInputNative.cs)
+- [XInputService.cs](../../app/Services/XInputService.cs)
+- [CodexKeybindingService.cs](../../app/Services/CodexKeybindingService.cs)
+- [CodexComposerService.cs](../../app/Services/CodexComposerService.cs)
 
 因此规范中的协议优先级应是：`Codex App Server / 原生模型动作 → ChatGPT 桌面命令 → 快捷键兜底`；Work Louder RPC 单独封装并按包版本检测。

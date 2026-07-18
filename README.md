@@ -3,7 +3,9 @@
 [![README in English](https://img.shields.io/badge/README-English-blue.svg)](README.md)
 [![简体中文说明](https://img.shields.io/badge/README-简体中文-red.svg)](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+
+> Platform scope: the v0.7 feature tour and Release instructions below describe the Windows WPF implementation. macOS v0.1.0 is a separate, intentionally smaller native SwiftUI preview under `Sources/`; it uses Apple's GameController framework and supports Xbox-layout controllers. There is no Developer ID-signed macOS Release yet; see [the macOS build and safety guide](docs/macos.md).
 
 Codex Micro sold out quickly. It is a tiny keyboard made specifically for Codex, and perhaps you wanted one. But consider the evidence:
 
@@ -50,7 +52,7 @@ And the six Agent keys from Codex Micro? Hold **LB**, then use the four D-pad di
 
 > ⚠️ **Security notice — read before use**
 >
-> This experimental v0.7 prototype was produced in one day with **Codex using GPT-5.6 Sol** and has not received an independent human code or security audit. A Codex update can change shortcuts or the accessibility tree, causing UI Automation to fail or perform the wrong action. The binary is unsigned. Review the source, test only with non-critical tasks, and use it entirely at your own risk. What the app does on your machine:
+> This experimental Windows v0.7 prototype was produced in one day with **Codex using GPT-5.6 Sol** and has not received an independent human code or security audit. A Codex update can change shortcuts or the accessibility tree, causing UI Automation to fail or perform the wrong action. The Windows Release binary is unsigned. The macOS preview instead uses a project-local self-signed development identity; it is not Developer ID-signed or notarized. Review the source, test only with non-critical tasks, and use it entirely at your own risk. What the Windows app does on your machine:
 >
 > - sends keyboard shortcuts and UI Automation commands to the **Codex window**; controller input is normally gated to Codex being in the foreground, and turning the Bridge off blocks controller actions;
 > - reads local Codex task data under `~/.codex`; if fallback bindings are enabled, it can append F17/F18/F20/F22 bindings to Codex's keybindings file;
@@ -60,7 +62,7 @@ And the six Agent keys from Codex Micro? Hold **LB**, then use the four D-pad di
 >
 > Agent Controller is an independent experiment and is not affiliated with, authorized by, or endorsed by OpenAI, Codex, or Work Louder.
 
-### Requirements
+### Windows v0.7 requirements
 
 - Windows 10 (build 19041+) or Windows 11
 - The Codex desktop app
@@ -69,7 +71,7 @@ And the six Agent keys from Codex Micro? Hold **LB**, then use the four D-pad di
 
 The tested controllers are the 8BitDo Ultimate 2, Xbox Series controller, and Flydigi Vader 4 Pro. Compatibility with other XInput devices depends on their XInput implementation and still needs physical validation.
 
-### Install from Releases
+### Install the Windows Release
 
 1. Download the latest zip from [Releases](../../releases).
 2. Extract it anywhere and run `AgentController.exe`.
@@ -79,7 +81,7 @@ The tested controllers are the 8BitDo Ultimate 2, Xbox Series controller, and Fl
 
 The v0.7.0-hotfix Windows package is self-contained and does not require a separate .NET runtime.
 
-### Control reference
+### Windows v0.7 control reference
 
 #### Base controls
 
@@ -121,27 +123,50 @@ The v0.7.0-hotfix Windows package is self-contained and does not require a separ
 
 Holding a right-stick direction builds momentum over about two seconds. The first step is immediate, repeat speed then ramps smoothly, and a deeper tilt allows a higher final rate.
 
-If the current selection exposes Speed but no Simple Power control—as Sol Max currently does—Agent Controller asks whether to switch modes. Press **A** for Advanced or **B** to remain in Simple; Standard/Fast stays available either way. After you decline, the same model/effort selection is not prompted again until the selection changes.
+If the current selection exposes Speed but no Simple Power control—as Sol Max did in the Windows v0.7 validation baseline—Agent Controller asks whether to switch modes. Press **A** for Advanced or **B** to remain in Simple; Standard/Fast stays available either way. After you decline, the same model/effort selection is not prompted again until the selection changes.
 
 The interface supports Simplified Chinese, English, or the Windows display language.
 
-For implementation status and edge cases, see the [v0.7 controller command reference](public/docs/controller-command-reference-v0.7.md) and [v0.7 release notes](public/docs/release-v0.7.md) (both currently in Chinese).
+For implementation status and edge cases, see the [v0.7 controller command reference](public/docs/controller-command-reference-v0.7.md) and [v0.7 release notes](public/docs/release-v0.7.md) (both in Chinese).
 
-### Known limitations
+### Windows v0.7 known limitations
 
 - Most actions depend on Codex's current shortcuts and accessibility tree. A Codex UI update can break them.
 - The Simple model list uses the official command shortcut; conflicts are blocked. Restart Codex once if it does not hot-load a newly written binding.
 - Unit tests and a successful Release build do not replace physical end-to-end testing against the current Codex app, account, and model options.
-- Agent slots currently use the first six tasks in the live snapshot; Agent and Command slots are not yet user-configurable.
+- Windows v0.7 Agent slots use the first six tasks in the live snapshot; Agent and Command slots are not user-configurable in that release.
 - Hands-free double-pull dictation, the base View action, Plan-mode controller routing, and a virtual HID bridge are not included in v0.7.
 
 ### Beyond Codex
 
-Only Codex is supported today, but the controller, capability, and Agent-target layers are intended to leave room for additional adapters. If there is enough demand, Agent Controller could expand to command-line workflows and other coding agents such as Claude Code.
+As of July 18, 2026, only Codex is supported, but the controller, capability, and Agent-target layers leave room for additional adapters. If there is enough demand, Agent Controller could expand to command-line workflows and other coding agents such as Claude Code.
 
-That work would require a dedicated adapter with its own task discovery, command execution, state detection, and safety checks. Current Codex compatibility should not be taken as compatibility with those tools today.
+That work would require a dedicated adapter with its own task discovery, command execution, state detection, and safety checks. Codex compatibility should not be taken as compatibility with those tools.
 
 ### Build from source
+
+#### macOS source preview
+
+macOS 14+, Xcode 16 or newer, and Swift are required:
+
+```bash
+./script/setup_local_signing.sh
+swift test
+./script/build_and_run.sh --verify
+```
+
+The setup command is idempotent and gives local rebuilds a stable TCC identity. The build script stages and locally signs `dist/AgentControllerMac.app`; the preview is not Developer ID-signed or notarized. Ordinary controller shortcuts require macOS event-posting permission. LT dictation additionally requires Accessibility and Codex's own microphone permission; it finds and focuses the current Dictate/Stop dictation control, sends Space only to Codex, and confirms the state change rather than relying on `Ctrl+Shift+D`.
+
+The opt-in live test exercises the current Codex accessibility start/stop loop. It defaults to skipped, does not pass through the physical controller, and does not prove spoken transcription:
+
+```bash
+RUN_LIVE_CODEX_DICTATION_TEST=1 \
+  swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
+```
+
+Supported mappings, verified hardware evidence, permission steps, and known gaps are documented in [the macOS guide](docs/macos.md).
+
+#### Windows v0.7
 
 Install the .NET 9 SDK, then run:
 
@@ -165,18 +190,21 @@ The command rebuilds the package, verifies its SHA-256 checksum, checks the remo
 
 In principle, emulating Micro's interaction protocol would be faster and less error-prone. But GPT-5.6 Sol kept refusing, arguing that it would be unstable and that UI Automation was the better approach. Its way of making the UI “stable” was to add 700–1,400 ms of latency—not something a human can tolerate as an interaction. To save time, I let it carry on that way at first.
 
-This morning I finally lost patience and called it out, because right-stick model adjustment had already taken far too long. Roughly: “You've gotten this wrong more than five times, and you're still insisting UIA is better??? If you'd used the Micro protocol, this would have been finished ages ago—why are you still arguing?” Then it finally started emulating Micro.
+On the morning of July 17, 2026, I finally lost patience and called it out, because right-stick model adjustment had already taken far too long. Roughly: “You've gotten this wrong more than five times, and you're still insisting UIA is better??? If you'd used the Micro protocol, this would have been finished ages ago—why are you still arguing?” Then it finally started emulating Micro.
 
 ### Repository layout
 
 Key paths in the repository are:
 
-- `app/` — the Windows WPF application and source of truth for runtime behavior;
-- `app.Tests/` — regression tests for controller input, localization, navigation, bridge safety, and Codex integration policies;
-- `scripts/` — reproducible Release packaging;
-- `docs/` — interaction specifications and active design/consultation notes;
+- `app/` and `app.Tests/` — the Windows WPF runtime and its regression tests;
+- `Package.swift`, `Sources/`, and `Tests/` — the native macOS runtime and its unit/live-test targets;
+- `scripts/` — reproducible Windows Release packaging;
+- `script/` — macOS signing, build, run, and diagnostics helpers;
+- `docs/macos.md` — the authoritative macOS build, permission, safety, and physical-test guide;
+- `docs/` — versioned Windows interaction specifications and experimental contracts;
 - `public/docs/` — user-facing command references, release notes, and experimental plans;
-- `todo.md` — roadmap and validation notes.
+- `AGENTS.md` — platform boundaries and engineering red lines;
+- `todo.md` — pending roadmap and validation work only.
 
 ### Credits
 

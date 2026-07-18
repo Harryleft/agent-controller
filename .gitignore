@@ -5,9 +5,15 @@
 !/LICENSE
 !/README.md
 !/README.zh-CN.md
+!/AGENTS.md
 !/todo.md
+!/Package.swift
 !/app/
 !/app.Tests/
+!/Sources/
+!/Sources/**
+!/Tests/
+!/Tests/**
 !/docs/
 !/docs/**
 !/public/
@@ -15,16 +21,23 @@
 !/public/docs/**
 !/scripts/
 !/scripts/**
+!/script/
+!/script/**
+!/.codex/
+!/.codex/environments/
+!/.codex/environments/environment.toml
 
 # Build and IDE output
 **/bin/
 **/obj/
 **/.artifacts/
+.build/
 .vs/
 *.user
 *.suo
 
 # Local configuration and diagnostics
+.local-signing/
 *.log
 .env
 .env.*

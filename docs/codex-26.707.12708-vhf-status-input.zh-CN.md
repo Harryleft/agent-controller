@@ -1,5 +1,6 @@
 # Codex 26.707.12708.0：VHF、Micro 状态与手柄输入协议
 
+> 平台范围：仅限 Windows VHF/Micro 实验，不约束 `docs/macos.md` 中的 macOS GameController / Accessibility 适配器。
 > 状态：实现基线与 M4 PoC 接口契约  
 > 冻结日期：2026-07-17  
 > 适用版本：`OpenAI.Codex_26.707.12708.0_x64__2p2nqsd0c76g0`  
