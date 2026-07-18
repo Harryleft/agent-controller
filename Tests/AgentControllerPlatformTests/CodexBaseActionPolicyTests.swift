@@ -18,6 +18,14 @@ final class CodexBaseActionPolicyTests: XCTestCase {
         )
     }
 
+    func testOpenRequiresAConfirmedTaskCandidate() {
+        XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.openSelected))
+        XCTAssertEqual(
+            CodexBaseActionPolicy.unavailableDiagnostic(for: .openSelected),
+            "Unavailable · 没有已确认的任务候选"
+        )
+    }
+
     func testCancelAndStopAreUnavailableWithoutExactPostActionState() {
         XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.cancel))
         XCTAssertFalse(CodexBaseActionPolicy.isAvailable(.stopTask))

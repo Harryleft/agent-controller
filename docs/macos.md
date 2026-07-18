@@ -68,7 +68,7 @@ Agent Controller 不采集音频；真正录音的是 Codex。权限分工如下
 | Xbox 输入 | macOS Codex 动作 |
 | --- | --- |
 | Menu / ☰ | 启动或置前 Codex；仅在同一 Codex PID 连续两次成为前台后报告“已确认” |
-| A | 若有已确认的侧边栏候选，则通过唯一 UUID 的 `codex://threads/<uuid>` 深链打开并等待确认；否则确认当前焦点项（Return） |
+| A | 仅打开已确认的 Catalog / 侧边栏任务候选并等待新鲜 AX 确认；没有候选时明确显示 Unavailable，不投递 Return |
 | X | 提交当前输入；当前缺少不读取正文的精确 UI 回执，明确显示 Unavailable，且不投递 Return |
 | Y | 新建任务（Command + N） |
 | B 短按 | 取消或关闭当前界面；当前缺少精确 UI 回执，明确显示 Unavailable，且不投递 Escape |

@@ -80,13 +80,11 @@ public final class CodexMacAutomation {
             logger.error("wake blocked reason=async-confirmation-required")
             return false
         case .openSelected:
-            guard !hasSidebarTaskSelection else {
-                logger.error(
-                    "sidebar open blocked reason=async-confirmation-required"
-                )
-                return false
-            }
-            return inject(.returnKey)
+            // Opening a task is handled only by the asynchronous sidebar or
+            // workspace adapters after they establish a unique task identity.
+            // Never fall back to Return when there is no confirmed candidate.
+            logger.error("open blocked reason=no-confirmed-task-candidate")
+            return false
         case .submit:
             clearSidebarTaskSelection()
             // A directed Return event is only a transport attempt.  Codex

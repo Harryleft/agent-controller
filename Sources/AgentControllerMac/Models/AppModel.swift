@@ -457,6 +457,11 @@ final class AppModel: ObservableObject {
                 requestSidebarOpen()
                 return
             }
+            lastAction = CodexBaseActionPolicy.unavailableDiagnostic(
+                for: action
+            ) ?? "打开任务 · Unavailable"
+            logger.info("action=open result=unavailable-no-confirmed-candidate")
+            return
         case .wakeCodex:
             clearSidebarSelection()
             clearWorkspaceSelection()

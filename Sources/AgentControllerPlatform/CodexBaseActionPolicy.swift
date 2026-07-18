@@ -9,7 +9,7 @@ import AgentControllerCore
 public enum CodexBaseActionPolicy: Sendable {
     public static func isAvailable(_ action: ControllerAction) -> Bool {
         switch action {
-        case .submit, .cancel, .stopTask:
+        case .openSelected, .submit, .cancel, .stopTask:
             false
         default:
             true
@@ -20,6 +20,8 @@ public enum CodexBaseActionPolicy: Sendable {
         for action: ControllerAction
     ) -> String? {
         switch action {
+        case .openSelected:
+            "Unavailable · 没有已确认的任务候选"
         case .submit:
             "Unavailable · 缺少提交后的精确 UI 回执"
         case .cancel:
