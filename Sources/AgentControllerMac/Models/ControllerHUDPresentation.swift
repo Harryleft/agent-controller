@@ -14,6 +14,8 @@ enum ControllerHUDLayer: String, CaseIterable, Equatable, Hashable, Sendable, Id
 
 enum ControllerHUDStatus: Equatable, Sendable {
     case confirmed
+    /// App-owned state only; it is not a Codex UI success receipt.
+    case local
     case unavailable
     case unknown
 }
@@ -78,7 +80,7 @@ enum ControllerHUDLayerStatusResolver {
     ) -> [ControllerHUDLayer: ControllerHUDStatus] {
         var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
         statuses[.leftShoulder] = workspaceCatalogAvailable
-            ? .confirmed
+            ? .local
             : .unavailable
         statuses[.action] = actionStatus
         statuses[.rightShoulder] = commandStatus
@@ -179,9 +181,11 @@ enum ControllerHUDCopy {
     ) -> String {
         switch (status, language) {
         case (.confirmed, .chinese): "已确认"
+        case (.local, .chinese): "仅本地"
         case (.unavailable, .chinese): "不可用"
         case (.unknown, .chinese): "未知"
         case (.confirmed, .english): "Confirmed"
+        case (.local, .english): "Local only"
         case (.unavailable, .english): "Unavailable"
         case (.unknown, .english): "Unknown"
         }

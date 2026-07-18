@@ -705,7 +705,7 @@ final class AppModel: ObservableObject {
         workspaceCatalogAvailable = true
         workspaceNavigator.replaceCatalog(catalog)
         workspaceSlotStatuses = (0..<CodexWorkspaceCatalog.agentSlotLimit).map {
-            catalog.agentSlots.indices.contains($0) ? .confirmed : .unavailable
+            catalog.agentSlots.indices.contains($0) ? .local : .unavailable
         }
     }
 
@@ -761,8 +761,8 @@ final class AppModel: ObservableObject {
     ) {
         switch result {
         case .confirmed:
-            lastAction = "Workspace Catalog · 已确认"
-            logger.info("workspace operation=\(operation, privacy: .public) result=selection-confirmed")
+            lastAction = "Workspace Catalog · 仅本地已选择（Codex 未切换）"
+            logger.info("workspace operation=\(operation, privacy: .public) result=local-selection")
         case .unavailable:
             lastAction = "Workspace Catalog · 不可用"
             logger.info("workspace operation=\(operation, privacy: .public) result=unavailable")

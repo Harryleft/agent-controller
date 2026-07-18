@@ -25,7 +25,7 @@ final class ControllerHUDPresentationTests: XCTestCase {
         let presentation = ControllerHUDPresentation.resolve(
             from: runtimeState(
                 activeLayer: .leftShoulder,
-                slotStatuses: [.confirmed, .unavailable]
+                slotStatuses: [.local, .unavailable]
             )
         )
 
@@ -38,7 +38,7 @@ final class ControllerHUDPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.slots.map(\.position), [1, 2, 3, 4, 5, 6])
         XCTAssertEqual(
             presentation.slots.map(\.status),
-            [.confirmed, .unavailable, .unknown, .unknown, .unknown, .unknown]
+            [.local, .unavailable, .unknown, .unknown, .unknown, .unknown]
         )
     }
 
@@ -54,6 +54,14 @@ final class ControllerHUDPresentationTests: XCTestCase {
         XCTAssertEqual(
             ControllerHUDCopy.status(.confirmed, language: .chinese),
             "已确认"
+        )
+        XCTAssertEqual(
+            ControllerHUDCopy.status(.local, language: .chinese),
+            "仅本地"
+        )
+        XCTAssertEqual(
+            ControllerHUDCopy.status(.local, language: .english),
+            "Local only"
         )
         XCTAssertEqual(
             ControllerHUDCopy.status(.unavailable, language: .english),
@@ -96,7 +104,7 @@ final class ControllerHUDPresentationTests: XCTestCase {
             runningStatus: .unavailable
         )
 
-        XCTAssertEqual(statuses[.leftShoulder], .confirmed)
+        XCTAssertEqual(statuses[.leftShoulder], .local)
         XCTAssertEqual(statuses[.rightShoulder], .unavailable)
         XCTAssertEqual(statuses[.rightTrigger], .unavailable)
         XCTAssertEqual(statuses[.action], .unavailable)

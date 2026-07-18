@@ -106,6 +106,7 @@ struct ControllerHUDView: View {
     private func statusColor(_ status: ControllerHUDStatus) -> Color {
         switch status {
         case .confirmed: .green
+        case .local: .blue
         case .unavailable: .orange
         case .unknown: .secondary
         }
