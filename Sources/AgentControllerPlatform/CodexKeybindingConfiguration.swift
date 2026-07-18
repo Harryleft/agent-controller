@@ -3,7 +3,7 @@ import Foundation
 /// Fixed semantic commands that may be provisioned into Codex's local
 /// `keybindings.json`. The service never sends arbitrary commands or accepts
 /// user-provided key strings.
-public enum CodexSemanticAction: String, CaseIterable, Equatable, Sendable {
+public enum CodexSemanticAction: String, CaseIterable, Equatable, Hashable, Sendable {
     case reasoningDown
     case reasoningUp
     case openModelPicker
@@ -81,10 +81,12 @@ public enum CodexKeybindingConflict: Equatable, Sendable {
 }
 
 public enum CodexKeybindingConfigurationOutcome: Equatable, Sendable {
-    case updated(backupCreated: Bool)
-    case unchanged
+    case updated(
+        backupCreated: Bool,
+        conflicts: [CodexKeybindingConflict]
+    )
+    case unchanged(conflicts: [CodexKeybindingConflict])
     case restored
-    case conflict([CodexKeybindingConflict])
     case invalidJSON
     case backupUnavailable
     case ioFailure
@@ -131,15 +133,14 @@ public struct CodexKeybindingConfigurationService: Sendable {
         do {
             let existing = try readArray(at: fileURL)
             let conflicts = conflicts(in: existing)
-            guard conflicts.isEmpty else {
-                return .init(outcome: .conflict(conflicts))
-            }
+            let blockedActions = Set(conflicts.map(\.action))
 
             let missing = CodexSemanticAction.allCases.filter { action in
-                !containsExactBinding(action, in: existing)
+                !blockedActions.contains(action) &&
+                    !containsExactBinding(action, in: existing)
             }
             guard !missing.isEmpty else {
-                return .init(outcome: .unchanged)
+                return .init(outcome: .unchanged(conflicts: conflicts))
             }
 
             var merged = existing
@@ -153,7 +154,12 @@ public struct CodexKeybindingConfigurationService: Sendable {
             let data = try jsonData(for: merged)
             let backupCreated = try createInitialBackupIfNeeded()
             try replaceAtomically(data: data, at: fileURL)
-            return .init(outcome: .updated(backupCreated: backupCreated))
+            return .init(
+                outcome: .updated(
+                    backupCreated: backupCreated,
+                    conflicts: conflicts
+                )
+            )
         } catch let error as KeybindingReadError {
             switch error {
             case .invalidJSON:
@@ -360,6 +366,17 @@ public struct CodexKeybindingConfigurationService: Sendable {
             throw error
         } catch {
             throw KeybindingReadError.ioFailure
+        }
+    }
+}
+
+private extension CodexKeybindingConflict {
+    var action: CodexSemanticAction {
+        switch self {
+        case let .keyAlreadyAssigned(action),
+             let .commandAlreadyAssigned(action),
+             let .duplicateManagedBinding(action):
+            action
         }
     }
 }

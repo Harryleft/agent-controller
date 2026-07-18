@@ -15,7 +15,10 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         try write(original, to: file)
 
         let service = CodexKeybindingConfigurationService(fileURL: file)
-        XCTAssertEqual(service.install().outcome, .updated(backupCreated: true))
+        XCTAssertEqual(
+            service.install().outcome,
+            .updated(backupCreated: true, conflicts: [])
+        )
 
         let merged = try read(file)
         XCTAssertEqual(Array(merged.prefix(3)).count, 3)
@@ -44,9 +47,12 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         try write(original, to: file)
 
         let service = CodexKeybindingConfigurationService(fileURL: file)
-        XCTAssertEqual(service.install().outcome, .updated(backupCreated: true))
+        XCTAssertEqual(
+            service.install().outcome,
+            .updated(backupCreated: true, conflicts: [])
+        )
         let backupBefore = try Data(contentsOf: service.backupURL)
-        XCTAssertEqual(service.install().outcome, .unchanged)
+        XCTAssertEqual(service.install().outcome, .unchanged(conflicts: []))
         XCTAssertEqual(try Data(contentsOf: service.backupURL), backupBefore)
     }
 
@@ -60,10 +66,28 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         let service = CodexKeybindingConfigurationService(fileURL: file)
         XCTAssertEqual(
             service.install().outcome,
-            .conflict([.keyAlreadyAssigned(action: .reasoningDown)])
+            .updated(
+                backupCreated: true,
+                conflicts: [.keyAlreadyAssigned(action: .reasoningDown)]
+            )
         )
-        XCTAssertEqual(try Data(contentsOf: file), before)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: service.backupURL.path))
+        let updated = try read(file)
+        XCTAssertTrue(updated.contains { item in
+            (item as? [String: Any])?["command"] as? String == "user.command"
+        })
+        XCTAssertFalse(updated.contains { item in
+            (item as? [String: Any])?["command"] as? String ==
+                CodexSemanticAction.reasoningDown.command
+        })
+        for action in CodexSemanticAction.allCases where action != .reasoningDown {
+            XCTAssertTrue(updated.contains { item in
+                let binding = item as? [String: Any]
+                return binding?["command"] as? String == action.command &&
+                    binding?["key"] as? String == action.key
+            })
+        }
+        XCTAssertNotEqual(try Data(contentsOf: file), before)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: service.backupURL.path))
     }
 
     func testCommandConflictAndDuplicateManagedBindingFailClosed() throws {
@@ -79,10 +103,13 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         let service = CodexKeybindingConfigurationService(fileURL: file)
         XCTAssertEqual(
             service.install().outcome,
-            .conflict([
-                .commandAlreadyAssigned(action: .reasoningDown),
-                .duplicateManagedBinding(action: .reasoningUp)
-            ])
+            .updated(
+                backupCreated: true,
+                conflicts: [
+                    .commandAlreadyAssigned(action: .reasoningDown),
+                    .duplicateManagedBinding(action: .reasoningUp)
+                ]
+            )
         )
     }
 
@@ -109,7 +136,10 @@ final class CodexKeybindingConfigurationTests: XCTestCase {
         let file = directory.appendingPathComponent("keybindings.json")
         try write([["command": "custom.command", "key": "F20"]], to: file)
         let service = CodexKeybindingConfigurationService(fileURL: file)
-        XCTAssertEqual(service.install().outcome, .updated(backupCreated: true))
+        XCTAssertEqual(
+            service.install().outcome,
+            .updated(backupCreated: true, conflicts: [])
+        )
         let backup = try Data(contentsOf: service.backupURL)
 
         try write([["command": "changed.command", "key": "F21"]], to: file)
