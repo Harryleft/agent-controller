@@ -32,12 +32,11 @@ struct ControllerHUDHost: View {
     }
 
     private var hudLayerStatuses: [ControllerHUDLayer: ControllerHUDStatus] {
-        var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
-        statuses[.leftShoulder] = model.workspaceCatalogAvailable
-            ? .confirmed
-            : .unavailable
-        statuses[.action] = model.actionPanelStatus
-        return statuses
+        ControllerHUDLayerStatusResolver.resolve(
+            workspaceCatalogAvailable: model.workspaceCatalogAvailable,
+            actionStatus: model.actionPanelStatus,
+            commandStatus: model.commandLayerStatus
+        )
     }
 
     private func refreshHUD(_ state: ControllerHUDRuntimeState) {

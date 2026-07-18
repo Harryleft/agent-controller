@@ -161,6 +161,24 @@ public final class CodexMacAutomation {
         return .shortcutPostedWithoutUIConfirmation
     }
 
+    /// Direct the one controller-authorized fork shortcut only after the
+    /// configuration has been freshly checked.  A posted event is deliberately
+    /// not treated as a completed fork: Codex currently exposes no exact AX
+    /// transition that can prove the new task was created.
+    public func executeForkThread(
+        bindingAvailability: CodexKeybindingAvailability
+    ) -> CodexFixedKeybindingAutomationResult {
+        guard bindingAvailability == .available else {
+            logger.error("fork blocked reason=binding-unavailable")
+            return .unavailable
+        }
+        guard inject(.f17) else {
+            logger.error("fork blocked reason=event-not-posted")
+            return .unavailable
+        }
+        return .shortcutPostedWithoutUIConfirmation
+    }
+
     /// Move a controller-owned candidate through tasks currently visible in
     /// the Codex sidebar. This changes only exact AX focus and never opens a
     /// task. Full titles are reduced to one-way identities during discovery;
@@ -1409,8 +1427,25 @@ public final class CodexMacAutomation {
         case .reasoningUp: .f14
         case .openModelPicker: .f15
         case .toggleFastMode: .f16
-        // This executor is intentionally only used for model actions.
+        // Fork uses the same fixed semantic binding, but only through the
+        // dedicated executeForkThread() entrypoint above.
         case .forkThread: .f17
+        }
+    }
+}
+
+/// Delivery is intentionally not a success state.  Until an exact AX adapter
+/// can observe a new task, callers must present both cases as unavailable.
+public enum CodexFixedKeybindingAutomationResult: Equatable, Sendable {
+    case unavailable
+    case shortcutPostedWithoutUIConfirmation
+
+    public var diagnostic: String {
+        switch self {
+        case .unavailable:
+            "Unavailable"
+        case .shortcutPostedWithoutUIConfirmation:
+            "Unavailable · 已定向投递，未确认 Codex UI"
         }
     }
 }

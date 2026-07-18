@@ -139,6 +139,18 @@ final class CodexActionSemanticsTests: XCTestCase {
             CodexActionRequest.allCases.count
         )
     }
+
+    func testFixedKeybindingDeliveryIsNeverDescribedAsCodexSuccess() {
+        XCTAssertEqual(
+            CodexFixedKeybindingAutomationResult.unavailable.diagnostic,
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            CodexFixedKeybindingAutomationResult
+                .shortcutPostedWithoutUIConfirmation.diagnostic,
+            "Unavailable · 已定向投递，未确认 Codex UI"
+        )
+    }
 }
 
 private struct FakeComposerAX {

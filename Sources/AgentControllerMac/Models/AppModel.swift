@@ -57,6 +57,11 @@ final class AppModel: ObservableObject {
     /// 可用或已确认。
     var actionPanelStatus: ControllerHUDStatus { .unavailable }
 
+    /// RB 的语音操作有独立的、可确认的听写适配器；其余 Command 槽和
+    /// RT Running 动作则没有 Codex 可观察回执。HUD 不能因一个局部路径
+    /// 存在而把整层误标成已确认。
+    var commandLayerStatus: ControllerHUDStatus { .unavailable }
+
     private enum Keys {
         static let bridgeEnabled = "bridgeEnabled"
         static let onlyWhenCodexForeground =
@@ -413,6 +418,10 @@ final class AppModel: ObservableObject {
             }
             requestDictation(recording: false)
             return
+        case let .command(intent):
+            clearSidebarSelection()
+            executeCommandIntent(intent)
+            return
         case let .selectSidebarTask(direction):
             clearWorkspaceSelection()
             requestSidebarSelection(direction: direction)
@@ -508,6 +517,75 @@ final class AppModel: ObservableObject {
             lastAction = result.diagnostic
             logger.info("action=wake result=\(result == .foregroundConfirmed ? "confirmed" : "unavailable", privacy: .public)")
             refreshRuntimeState()
+        }
+    }
+
+    private func executeCommandIntent(_ intent: CommandIntent) {
+        guard let action = intent.codexCommandAction else {
+            // start/stopPushToTalk are handled before this method and retain
+            // their dedicated, exact dictation-state confirmation path.
+            lastAction = "Command · 不可用"
+            return
+        }
+        executeCodexSemanticRequest(
+            .command(action),
+            displayName: intent.displayName,
+            logValue: intent.rawValue
+        )
+    }
+
+    /// Resolves the closed semantic policy immediately before dispatch.  The
+    /// keybinding service rereads the file here; provisioning at launch is not
+    /// treated as fresh evidence when another process may have changed it.
+    private func executeCodexSemanticRequest(
+        _ request: CodexActionRequest,
+        displayName: String,
+        logValue: String
+    ) {
+        let capability = actionSemantics.capability(for: request)
+        let availability: CodexKeybindingAvailability
+        let evidence: CodexActionEvidence?
+        switch capability {
+        case let .available(route, requiredEvidence):
+            guard case let .fixedKeybinding(semanticAction) = route else {
+                lastAction = "\(displayName) · 不可用（无精确 AX 执行器）"
+                logger.info(
+                    "semantic action=\(logValue, privacy: .public) result=unavailable-no-exact-adapter"
+                )
+                return
+            }
+            availability = keybindingConfigurationService.bindingAvailability(
+                for: semanticAction
+            )
+            evidence = availability == .available ? requiredEvidence : nil
+        case .unavailable:
+            availability = .unavailable
+            evidence = nil
+        }
+
+        switch actionSemantics.resolve(request, evidence: evidence) {
+        case let .authorized(route, _):
+            guard case .fixedKeybinding(.forkThread) = route else {
+                // No other fixed-key route is currently admitted by the
+                // policy. Keep this guard fail-closed if the catalog evolves.
+                lastAction = "\(displayName) · 不可用（未接线语义路由）"
+                logger.error(
+                    "semantic action=\(logValue, privacy: .public) result=blocked-unwired-route"
+                )
+                return
+            }
+            let result = automation.executeForkThread(
+                bindingAvailability: availability
+            )
+            lastAction = "\(displayName) · \(result.diagnostic)"
+            logger.info(
+                "semantic action=\(logValue, privacy: .public) result=\(result == .shortcutPostedWithoutUIConfirmation ? "posted-unconfirmed" : "unavailable", privacy: .public)"
+            )
+        case let .unavailable(reason):
+            lastAction = "\(displayName) · 不可用（\(reason.displayName)）"
+            logger.info(
+                "semantic action=\(logValue, privacy: .public) result=unavailable reason=\(reason.logValue, privacy: .public)"
+            )
         }
     }
 
@@ -902,6 +980,46 @@ private extension ActionPanelIntent {
         case .clearComposer: "clear-composer"
         case .projectContext: "project-context"
         case .requestClearComposerConfirmation: "clear-composer-confirmation"
+        }
+    }
+}
+
+private extension CommandIntent {
+    var codexCommandAction: CodexCommandAction? {
+        switch self {
+        case .approve: .approve
+        case .decline: .decline
+        case .fork: .fork
+        case .dispatch: .dispatch
+        case .toggleFast, .startPushToTalk, .stopPushToTalk: nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .toggleFast: "切换 Fast"
+        case .approve: "批准"
+        case .decline: "拒绝"
+        case .fork: "Fork"
+        case .dispatch: "发送"
+        case .startPushToTalk: "Command 语音开始"
+        case .stopPushToTalk: "Command 语音结束"
+        }
+    }
+}
+
+private extension CodexActionUnavailableReason {
+    var displayName: String {
+        switch self {
+        case .noVerifiedRoute: "无已验证路径"
+        case .evidenceNotConfirmed: "证据未确认"
+        }
+    }
+
+    var logValue: String {
+        switch self {
+        case .noVerifiedRoute: "no-verified-route"
+        case .evidenceNotConfirmed: "evidence-not-confirmed"
         }
     }
 }

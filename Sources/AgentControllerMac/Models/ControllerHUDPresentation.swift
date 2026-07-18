@@ -67,6 +67,24 @@ struct ControllerHUDRuntimeState: Equatable, Sendable {
     ]
 }
 
+/// Keeps the per-layer availability projection pure and privacy-safe so HUD
+/// tests can prove that a missing Codex receipt is never painted as success.
+enum ControllerHUDLayerStatusResolver {
+    static func resolve(
+        workspaceCatalogAvailable: Bool,
+        actionStatus: ControllerHUDStatus,
+        commandStatus: ControllerHUDStatus
+    ) -> [ControllerHUDLayer: ControllerHUDStatus] {
+        var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
+        statuses[.leftShoulder] = workspaceCatalogAvailable
+            ? .confirmed
+            : .unavailable
+        statuses[.action] = actionStatus
+        statuses[.rightShoulder] = commandStatus
+        return statuses
+    }
+}
+
 struct ControllerHUDPresentation: Equatable, Sendable {
     struct Layer: Equatable, Sendable, Identifiable {
         let kind: ControllerHUDLayer
