@@ -379,7 +379,7 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.y]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 9), [.closeActionPanel])
     }
 
-    func testLeftStickVerticalIsSuppressedWhileLeftTriggerOwnsInput() {
+    func testLeftStickVerticalIsSuppressedWhileLatchedVoiceOwnsInput() {
         var engine = activeEngine()
 
         XCTAssertEqual(
@@ -392,7 +392,7 @@ final class ControllerMappingEngineTests: XCTestCase {
         )
         XCTAssertEqual(
             engine.update(snapshot: snapshot(buttons: [.leftShoulder], leftStick: SIMD2(0, -0.9), leftTrigger: 0), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3),
-            [.stopDictation]
+            []
         )
         XCTAssertEqual(
             engine.update(snapshot: snapshot(buttons: [.leftShoulder], leftStick: SIMD2(0, -0.9)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4),
@@ -405,6 +405,10 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(
             engine.update(snapshot: snapshot(buttons: [.leftShoulder], leftStick: SIMD2(0, -0.9)), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 6),
             []
+        )
+        XCTAssertEqual(
+            engine.update(snapshot: snapshot(leftTrigger: 0.50), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 7),
+            [.stopDictation]
         )
     }
 
@@ -471,19 +475,23 @@ final class ControllerMappingEngineTests: XCTestCase {
         XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 6.1), [])
     }
 
-    func testLeftTriggerUsesHysteresisForPushToTalk() {
+    func testLeftTriggerUsesHysteresisAndSecondPressStopsLatchedVoice() {
         var engine = activeEngine()
         XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.34), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1), [])
         XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.35), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2), [.startDictation])
         XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.25), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3), [])
-        XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.20), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4), [.stopDictation])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.20), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.35), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5), [.stopDictation])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.20), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 6), [])
     }
 
-    func testDictationSuppressesBaseActionsUntilTriggerRelease() {
+    func testXFinishesLatchedVoiceThenRequestsSubmit() {
         var engine = activeEngine()
         XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0.50), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 1), [.startDictation])
-        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.x], leftTrigger: 0.50), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2), [])
-        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.x], leftTrigger: 0), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3), [.stopDictation])
+        XCTAssertEqual(engine.update(snapshot: snapshot(leftTrigger: 0), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 2), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.x]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 3), [.finishDictationAndSubmit])
+        XCTAssertEqual(engine.update(snapshot: snapshot(), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 4), [])
+        XCTAssertEqual(engine.update(snapshot: snapshot(buttons: [.x]), bridgeEnabled: true, onlyWhenCodexForeground: false, codexIsForeground: false, timestamp: 5), [.submit])
     }
 
     func testDisconnectAndBridgeShutdownDrainActiveDictationOnce() {

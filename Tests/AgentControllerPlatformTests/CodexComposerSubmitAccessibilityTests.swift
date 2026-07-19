@@ -4,6 +4,48 @@ import XCTest
 final class CodexComposerSubmitAccessibilityTests: XCTestCase {
     private let verifier = CodexComposerSubmitVerifier()
 
+    func testMissingAXEditableUsesSettableValueFallback() {
+        XCTAssertTrue(CodexComposerEditabilityPolicy.accepts(
+            explicitEditable: nil,
+            valueIsSettable: true
+        ))
+        XCTAssertFalse(CodexComposerEditabilityPolicy.accepts(
+            explicitEditable: nil,
+            valueIsSettable: false
+        ))
+    }
+
+    func testExplicitNonEditableComposerCannotUseFallback() {
+        XCTAssertTrue(CodexComposerEditabilityPolicy.accepts(
+            explicitEditable: true,
+            valueIsSettable: false
+        ))
+        XCTAssertFalse(CodexComposerEditabilityPolicy.accepts(
+            explicitEditable: false,
+            valueIsSettable: true
+        ))
+    }
+
+    func testFocusedComposerAdmissionDoesNotDependOnUnrelatedTreeCompleteness() {
+        XCTAssertTrue(CodexFocusedComposerPolicy.accepts(
+            roleIsTextArea: true,
+            isFocused: true,
+            belongsToFocusedWindow: true,
+            explicitEditable: nil,
+            valueIsSettable: true,
+            numberOfCharacters: 5
+        ))
+
+        XCTAssertFalse(CodexFocusedComposerPolicy.accepts(
+            roleIsTextArea: true,
+            isFocused: true,
+            belongsToFocusedWindow: false,
+            explicitEditable: nil,
+            valueIsSettable: true,
+            numberOfCharacters: 5
+        ))
+    }
+
     func testNonEmptyUniqueFocusedComposerCanOnlyConfirmAfterItClears() {
         var adapter = FakeSubmitAdapter(
             before: snapshot(count: 12),
@@ -120,6 +162,11 @@ final class CodexComposerSubmitAccessibilityTests: XCTestCase {
         XCTAssertEqual(
             CodexComposerSubmitAutomationResult.composerClearedConfirmed.diagnostic,
             "Composer 已清空（已确认）"
+        )
+        XCTAssertEqual(
+            CodexComposerSubmitAutomationResult
+                .shortcutPostedWithoutUIConfirmation.diagnostic,
+            "提交已发送（未验证）"
         )
     }
 

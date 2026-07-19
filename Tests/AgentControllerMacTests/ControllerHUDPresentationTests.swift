@@ -2,127 +2,52 @@ import XCTest
 @testable import AgentControllerMac
 
 final class ControllerHUDPresentationTests: XCTestCase {
-    func testVisibleOnlyWhenEveryRuntimeGateAllowsIt() {
-        let visible = ControllerHUDPresentation.resolve(
-            from: runtimeState(activeLayer: .leftShoulder)
-        )
-        XCTAssertTrue(visible.isVisible)
+    func testVisibleHUDContainsOnlyShippedLTAndXActions() {
+        let presentation = ControllerHUDPresentation.resolve(from: runtimeState())
 
+        XCTAssertTrue(presentation.isVisible)
+        XCTAssertEqual(presentation.actions, [.dictation, .submit])
+    }
+
+    func testSafetyGatesHideHUD() {
         [
-            runtimeState(bridgeEnabled: false, activeLayer: .leftShoulder),
-            runtimeState(codexForeground: false, activeLayer: .leftShoulder),
-            runtimeState(controllerConnected: false, activeLayer: .leftShoulder),
-            runtimeState(activeLayer: .base)
-        ].forEach { state in
-            let presentation = ControllerHUDPresentation.resolve(from: state)
-            XCTAssertFalse(presentation.isVisible)
-            XCTAssertTrue(presentation.layers.isEmpty)
-            XCTAssertTrue(presentation.slots.isEmpty)
+            runtimeState(bridgeEnabled: false),
+            runtimeState(codexForeground: false),
+            runtimeState(controllerConnected: false)
+        ].forEach {
+            XCTAssertEqual(ControllerHUDPresentation.resolve(from: $0), .hidden)
         }
     }
 
-    func testPresentationAlwaysContainsFiveLayersAndSixPrivacySafeSlots() {
-        let presentation = ControllerHUDPresentation.resolve(
-            from: runtimeState(
-                activeLayer: .leftShoulder,
-                slotStatuses: [.local, .unavailable]
-            )
-        )
-
-        XCTAssertEqual(presentation.layers.count, 5)
-        XCTAssertEqual(
-            presentation.layers.first(where: { $0.kind == .leftShoulder })?.isActive,
-            true
-        )
-        XCTAssertEqual(presentation.slots.count, 6)
-        XCTAssertEqual(presentation.slots.map(\.position), [1, 2, 3, 4, 5, 6])
-        XCTAssertEqual(
-            presentation.slots.map(\.status),
-            [.local, .unavailable, .unknown, .unknown, .unknown, .unknown]
-        )
-    }
-
-    func testChineseAndEnglishCopyIncludesAllStatusStates() {
+    func testCopyNamesOnlyCurrentActions() {
         XCTAssertEqual(
             ControllerHUDLanguage.from(localeIdentifier: "zh-Hans_CN"),
             .chinese
         )
+        XCTAssertEqual(ControllerHUDCopy.title(.chinese), "手柄控制")
         XCTAssertEqual(
-            ControllerHUDCopy.title(.chinese),
-            "手柄 HUD"
-        )
-        XCTAssertEqual(
-            ControllerHUDCopy.status(.confirmed, language: .chinese),
-            "已确认"
+            ControllerHUDCopy.action(.dictation, language: .chinese),
+            "按一下开始，再按一下结束"
         )
         XCTAssertEqual(
-            ControllerHUDCopy.status(.local, language: .chinese),
-            "仅本地"
+            ControllerHUDCopy.action(.submit, language: .chinese),
+            "提交当前输入"
         )
         XCTAssertEqual(
-            ControllerHUDCopy.status(.local, language: .english),
-            "Local only"
+            ControllerHUDCopy.action(.dictation, language: .english),
+            "Press once to start, again to stop"
         )
-        XCTAssertEqual(
-            ControllerHUDCopy.status(.unavailable, language: .english),
-            "Unavailable"
-        )
-        XCTAssertEqual(
-            ControllerHUDCopy.status(.unknown, language: .english),
-            "Unknown"
-        )
-        XCTAssertEqual(
-            ControllerHUDCopy.actionUnavailableNotice(.chinese),
-            "Action 动作尚无已验证的精确 AX 路径"
-        )
-        XCTAssertEqual(
-            ControllerHUDCopy.actionUnavailableNotice(.english),
-            "Action commands lack a verified exact AX route"
-        )
-    }
-
-    func testActiveActionLayerIsExplicitlyUnavailable() {
-        let presentation = ControllerHUDPresentation.resolve(
-            from: runtimeState(activeLayer: .action)
-        )
-
-        XCTAssertEqual(
-            presentation.layers.first(where: { $0.kind == .action })?.status,
-            .unavailable
-        )
-        XCTAssertEqual(
-            presentation.layers.first(where: { $0.kind == .action })?.isActive,
-            true
-        )
-    }
-
-    func testCommandAndRunningLayersStayUnavailableWithoutCodexReceipt() {
-        let statuses = ControllerHUDLayerStatusResolver.resolve(
-            workspaceCatalogAvailable: true,
-            actionStatus: .unavailable,
-            commandStatus: .unavailable,
-            runningStatus: .unavailable
-        )
-
-        XCTAssertEqual(statuses[.leftShoulder], .local)
-        XCTAssertEqual(statuses[.rightShoulder], .unavailable)
-        XCTAssertEqual(statuses[.rightTrigger], .unavailable)
-        XCTAssertEqual(statuses[.action], .unavailable)
     }
 
     private func runtimeState(
         bridgeEnabled: Bool = true,
         codexForeground: Bool = true,
-        controllerConnected: Bool = true,
-        activeLayer: ControllerHUDLayer = .base,
-        slotStatuses: [ControllerHUDStatus] = []
+        controllerConnected: Bool = true
     ) -> ControllerHUDRuntimeState {
         ControllerHUDRuntimeState(
             bridgeEnabled: bridgeEnabled,
             codexForeground: codexForeground,
-            controllerConnected: controllerConnected,
-            activeLayer: activeLayer,
-            slotStatuses: slotStatuses
+            controllerConnected: controllerConnected
         )
     }
 }

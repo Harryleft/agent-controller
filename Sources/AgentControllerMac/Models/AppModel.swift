@@ -97,6 +97,7 @@ final class AppModel: ObservableObject {
     private var wakeTask: Task<Void, Never>?
     private var submitTask: Task<Void, Never>?
     private var submitRevision = 0
+    private var voiceThenSubmitTask: Task<Void, Never>?
     private var wakeRequestGate = CodexWakeRequestGate()
     private var workspaceNavigator = CodexWorkspaceCatalogNavigator()
     private var lastWorkspaceCatalogRefreshAt: TimeInterval = 0
@@ -300,6 +301,7 @@ final class AppModel: ObservableObject {
             sessionPhase: mappingEngine.phase,
             codexForeground: automation.isCodexForeground
         ) {
+            cancelVoiceThenSubmit()
             clearSidebarSelection()
             clearWorkspaceSelection()
             if !bridgeEnabled || !snapshot.isConnected {
@@ -447,8 +449,9 @@ final class AppModel: ObservableObject {
         // A non-X controller action observed after X wins over the pending
         // composer receipt, including another action emitted in the same
         // snapshot. X release emits no action and therefore preserves it.
-        if action != .submit {
+        if action != .submit && action != .finishDictationAndSubmit {
             cancelComposerSubmit()
+            cancelVoiceThenSubmit()
         }
         switch action {
         case .openActionPanel:
@@ -483,6 +486,11 @@ final class AppModel: ObservableObject {
                 return
             }
             requestDictation(recording: false)
+            return
+        case .finishDictationAndSubmit:
+            clearSidebarSelection()
+            clearWorkspaceSelection()
+            requestVoiceStopThenSubmit()
             return
         case .command(.startPushToTalk):
             clearSidebarSelection()
@@ -661,8 +669,17 @@ final class AppModel: ObservableObject {
                 return
             }
             lastAction = result.diagnostic
+            let resultLogValue: String
+            switch result {
+            case .composerClearedConfirmed:
+                resultLogValue = "composer-cleared-confirmed"
+            case .shortcutPostedWithoutUIConfirmation:
+                resultLogValue = "shortcut-posted-unconfirmed"
+            case .unavailable:
+                resultLogValue = "unavailable"
+            }
             logger.info(
-                "action=submit result=\(result == .composerClearedConfirmed ? "composer-cleared-confirmed" : "unavailable", privacy: .public)"
+                "action=submit result=\(resultLogValue, privacy: .public)"
             )
             submitTask = nil
         }
@@ -673,6 +690,56 @@ final class AppModel: ObservableObject {
         submitRevision += 1
         submitTask?.cancel()
         submitTask = nil
+    }
+
+    /// X must never race the input method: Doubao commits its final text only
+    /// after Right Option is released.  This serializes that release and the
+    /// existing conservative submit adapter, while retaining all normal
+    /// foreground, connection, binding, and cancellation gates.
+    private func requestVoiceStopThenSubmit() {
+        cancelVoiceThenSubmit()
+        requestDictation(recording: false)
+        let revision = dictationRevision
+        lastAction = "结束语音后提交 · 正在等待文本"
+        voiceThenSubmitTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let task = dictationTask {
+                await task.value
+            }
+            guard !Task.isCancelled,
+                  revision == dictationRevision,
+                  !dictationDesiredByBridge,
+                  !dictationStartedByBridge,
+                  !dictationNeedsCleanup,
+                  bridgeEnabled,
+                  currentSnapshot.isConnected,
+                  mappingEngine.phase == .active,
+                  mappingEngine.inputLayer == .base,
+                  automation.isCodexForeground else {
+                if !Task.isCancelled, revision == dictationRevision {
+                    lastAction = "结束语音后提交 · Unavailable"
+                    logger.info("voice-submit result=unavailable-after-release")
+                }
+                voiceThenSubmitTask = nil
+                return
+            }
+
+            // Give the selected input method a short, bounded commit window.
+            // This is not a claim that text exists; requestComposerSubmit()
+            // remains responsible for the actual composer preconditions.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled,
+                  revision == dictationRevision else { return }
+            voiceThenSubmitTask = nil
+            logger.info("voice-submit result=release-complete dispatch=submit")
+            requestComposerSubmit()
+        }
+    }
+
+    private func cancelVoiceThenSubmit() {
+        guard voiceThenSubmitTask != nil else { return }
+        voiceThenSubmitTask?.cancel()
+        voiceThenSubmitTask = nil
     }
 
     private func executeCommandIntent(_ intent: CommandIntent) {
@@ -942,8 +1009,8 @@ final class AppModel: ObservableObject {
         dictationDesiredByBridge = recording
         dictationRevision += 1
         lastAction = recording
-            ? "开始语音 · 正在确认"
-            : "结束语音 · 正在确认"
+            ? "豆包语音 · 正在按住右 Option"
+            : "豆包语音 · 正在释放右 Option"
 
         guard dictationTask == nil else { return }
         dictationTask = Task { @MainActor [weak self] in
@@ -967,7 +1034,7 @@ final class AppModel: ObservableObject {
             let recording = dictationDesiredByBridge
             let attemptRevision = dictationRevision
             let attemptGeneration = systemPowerGeneration
-            let result = await automation.setDictation(
+            let result = automation.setDoubaoVoiceShortcut(
                 recording: recording
             )
 
@@ -978,42 +1045,22 @@ final class AppModel: ObservableObject {
                 continue
             }
 
-            if recording && result == .alreadySatisfied {
-                // 听写可能由用户手动启动；桥接没有执行状态转换，因此
-                // 不取得所有权，LT 松开也不能替用户停止它。
-                dictationDesiredByBridge = false
-                dictationStartedByBridge = false
-                dictationNeedsCleanup = false
-                lastAction = "开始语音 · 已在录音，桥接未接管"
-                logger.info(
-                    "action=开始语音 result=already-active-not-owned"
-                )
-                break
-            }
-
-            if result.succeeded {
+            if result.applied {
                 dictationStartedByBridge = recording
                 dictationNeedsCleanup = recording
                 lastAction = recording
-                    ? "开始语音 · 已确认录音"
-                    : "结束语音 · 已确认停止"
+                    ? "豆包语音 · 右 Option 已按住"
+                    : "豆包语音 · 右 Option 已释放"
                 logger.info(
-                    "action=\(recording ? "开始语音" : "结束语音", privacy: .public) result=confirmed"
+                    "doubao-voice action=\(recording ? "hold" : "release", privacy: .public) result=posted"
                 )
-                // LT 可能在开始确认期间已经松开；循环会立即执行反向
-                // 状态切换，不会把短触发留成持续录音。
+                // 第二次 LT 按下才请求停止；桥接状态在此期间保持已按住。
                 continue
             }
 
-            if recording && result == .stateNotConfirmed {
-                // 点击已经定向投递给 Codex，只是状态确认失败。保守地
-                // 保留清理责任，LT 松开或返回前台后会尝试停止。
-                dictationNeedsCleanup = true
-            }
-
-            lastAction = "\(recording ? "开始语音" : "结束语音") · \(result.diagnostic)"
+            lastAction = "豆包语音 · \(result.diagnostic)"
             logger.error(
-                "action=\(recording ? "开始语音" : "结束语音", privacy: .public) result=not-confirmed reason=\(result.diagnostic, privacy: .public)"
+                "doubao-voice action=\(recording ? "hold" : "release", privacy: .public) result=failed reason=\(result.diagnostic, privacy: .public)"
             )
             if dictationRevision != attemptRevision {
                 continue
@@ -1035,9 +1082,7 @@ final class AppModel: ObservableObject {
         let needsCleanup =
             !bridgeEnabled ||
             !currentSnapshot.isConnected ||
-            mappingEngine.phase != .active ||
-            currentSnapshot.leftTrigger <=
-                ControllerMappingEngine.dictationStopThreshold
+            mappingEngine.phase != .active
         guard needsCleanup else { return }
 
         if dictationDesiredByBridge {
@@ -1092,6 +1137,7 @@ private extension ControllerAction {
         case .stopTask: "停止任务"
         case .startDictation: "开始语音"
         case .stopDictation: "结束语音"
+        case .finishDictationAndSubmit: "结束语音后提交"
         case .navigate(let direction): "方向 \(direction.displayName)"
         case .workspaceCatalog: "Workspace Catalog"
         case .questionAnswer: "问答导航"

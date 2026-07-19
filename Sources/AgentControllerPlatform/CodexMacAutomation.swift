@@ -20,6 +20,7 @@ public final class CodexMacAutomation {
     private var selectedSidebarThreadID: UUID?
     private let keybindingConfigurationService:
         CodexKeybindingConfigurationService
+    private var doubaoRightOptionHeld = false
 
     public init(
         keybindingConfigurationService: CodexKeybindingConfigurationService =
@@ -42,6 +43,43 @@ public final class CodexMacAutomation {
 
     public var hasSidebarTaskSelection: Bool {
         selectedSidebarThreadID != nil
+    }
+
+    /// 控制用户已在豆包输入法中配置的“右 Option 按住说话”快捷键。
+    /// 开始仅在 Codex 前台投递；停止优先释放已由桥接按住的修饰键，防止
+    /// 前台切换、断开或睡眠后把 Option 卡在按下状态。
+    public func setDoubaoVoiceShortcut(
+        recording: Bool
+    ) -> DoubaoVoiceShortcutAutomationResult {
+        guard MacInputAuthorization.canPostEvents else {
+            return logDoubaoVoiceShortcutResult(.postEventDenied)
+        }
+        guard MacInputAuthorization.isAccessibilityTrusted else {
+            return logDoubaoVoiceShortcutResult(.accessibilityDenied)
+        }
+
+        if recording {
+            guard foregroundCodexApplication != nil else {
+                return logDoubaoVoiceShortcutResult(.codexNotForeground)
+            }
+            guard !doubaoRightOptionHeld else {
+                return logDoubaoVoiceShortcutResult(.alreadyHeld)
+            }
+            guard postRightOption(isDown: true) else {
+                return logDoubaoVoiceShortcutResult(.eventCreationFailed)
+            }
+            doubaoRightOptionHeld = true
+            return logDoubaoVoiceShortcutResult(.held)
+        }
+
+        guard doubaoRightOptionHeld else {
+            return logDoubaoVoiceShortcutResult(.alreadyReleased)
+        }
+        guard postRightOption(isDown: false) else {
+            return logDoubaoVoiceShortcutResult(.eventCreationFailed)
+        }
+        doubaoRightOptionHeld = false
+        return logDoubaoVoiceShortcutResult(.released)
     }
 
     /// Activate or launch Codex, then confirm that the same process owns the
@@ -110,7 +148,7 @@ public final class CodexMacAutomation {
             // remain unavailable rather than claiming a cancellation.
             logger.error("cancel blocked reason=no-ui-confirmation-contract")
             return false
-        case .startDictation, .stopDictation:
+        case .startDictation, .stopDictation, .finishDictationAndSubmit:
             // Dictation must use setDictation(recording:). A posted keyboard
             // event has no delivery acknowledgement and must never be treated
             // as proof that Codex actually started or stopped recording.
@@ -189,36 +227,59 @@ public final class CodexMacAutomation {
         return .shortcutPostedWithoutUIConfirmation
     }
 
-    /// Submit through Codex's fixed `composer.submit` binding only when the
-    /// content-free AX contract can prove that the same focused composer in
-    /// the same foreground window changed from non-empty to empty. This is
-    /// not, and must not be presented as, evidence that a turn completed.
+    /// Submit through Codex's standard Return-key path after verifying the
+    /// foreground target and the managed submit configuration. When Codex exposes
+    /// a focused composer, retain the stronger non-empty-to-empty receipt;
+    /// current Codex builds can omit that AX metadata entirely, in which case
+    /// this reports transport success without claiming a completed turn.
     public func submitComposer() async -> CodexComposerSubmitAutomationResult {
-        guard !Task.isCancelled,
-              MacInputAuthorization.canPostEvents,
-              MacInputAuthorization.isAccessibilityTrusted,
-              let application = foregroundCodexApplication else {
-            return logComposerSubmitResult(.unavailable)
+        guard !Task.isCancelled else {
+            return logComposerSubmitResult(.unavailable, reason: "cancelled")
+        }
+        guard MacInputAuthorization.canPostEvents else {
+            return logComposerSubmitResult(.unavailable, reason: "post-event-denied")
+        }
+        guard MacInputAuthorization.isAccessibilityTrusted else {
+            return logComposerSubmitResult(.unavailable, reason: "accessibility-denied")
+        }
+        guard let application = foregroundCodexApplication else {
+            return logComposerSubmitResult(.unavailable, reason: "codex-not-foreground")
         }
 
         let targetPID = application.processIdentifier
-        guard let before = composerSnapshot(for: targetPID),
-              before.numberOfCharacters > 0,
-              // Re-read directly before dispatch so a focus/window change in
-              // the small discovery-to-event gap fails closed.
-              let immediatelyBeforePost = composerSnapshot(for: targetPID),
+        // This synchronous reread is intentionally adjacent to the event. A
+        // successful earlier check never authorizes a now-conflicted binding.
+        guard keybindingConfigurationService.bindingAvailability(
+            for: .submitComposer
+        ) == .available else {
+            return logComposerSubmitResult(.unavailable, reason: "binding-unavailable")
+        }
+        guard !Task.isCancelled else {
+            return logComposerSubmitResult(.unavailable, reason: "cancelled-before-post")
+        }
+
+        guard let before = composerSnapshot(for: targetPID) else {
+            guard postKey(.returnKey, to: targetPID) else {
+                return logComposerSubmitResult(.unavailable, reason: "submit-key-post-failed")
+            }
+            return logComposerSubmitResult(
+                .shortcutPostedWithoutUIConfirmation,
+                reason: "composer-metadata-missing"
+            )
+        }
+        guard before.numberOfCharacters > 0 else {
+            return logComposerSubmitResult(.unavailable, reason: "composer-empty")
+        }
+        // Re-read directly before dispatch so a focus/window change in the
+        // small discovery-to-event gap fails closed when AX metadata exists.
+        guard let immediatelyBeforePost = composerSnapshot(for: targetPID),
               immediatelyBeforePost.numberOfCharacters > 0,
               CFEqual(immediatelyBeforePost.window, before.window),
-              CFEqual(immediatelyBeforePost.element, before.element),
-              // This synchronous reread is intentionally adjacent to the
-              // event. A successful check when X was pressed does not make a
-              // later, externally changed keybindings file safe to use.
-              keybindingConfigurationService.bindingAvailability(
-                for: .submitComposer
-              ) == .available,
-              !Task.isCancelled,
-              postKey(.f18, to: targetPID) else {
-            return logComposerSubmitResult(.unavailable)
+              CFEqual(immediatelyBeforePost.element, before.element) else {
+            return logComposerSubmitResult(.unavailable, reason: "composer-changed-before-post")
+        }
+        guard postKey(.returnKey, to: targetPID) else {
+            return logComposerSubmitResult(.unavailable, reason: "submit-key-post-failed")
         }
 
         let confirmed = await waitForComposerCleared(
@@ -226,9 +287,9 @@ public final class CodexMacAutomation {
             expectedComposer: before.element,
             targetPID: targetPID
         )
-        return logComposerSubmitResult(
-            confirmed ? .composerClearedConfirmed : .unavailable
-        )
+        return logComposerSubmitResult(confirmed
+            ? .composerClearedConfirmed
+            : .shortcutPostedWithoutUIConfirmation)
     }
 
     /// Move a controller-owned candidate through tasks currently visible in
@@ -955,8 +1016,28 @@ public final class CodexMacAutomation {
         }
         keyDown.flags = modifiers
         keyUp.flags = modifiers
-        keyDown.postToPid(targetPID)
-        keyUp.postToPid(targetPID)
+        // Codex's Electron renderer does not consume process-directed CGEvents
+        // for the composer. A HID Return event is the macOS delivery path used
+        // by the verified manual keyboard-send flow.
+        // The foreground check occurs immediately before and after this
+        // synchronous pair, so this submit route never intentionally targets
+        // another application.
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return foregroundCodexApplication?.processIdentifier == targetPID
+    }
+
+    private func postRightOption(isDown: Bool) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let event = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: KeyCode.rightOption.rawValue,
+                  keyDown: isDown
+              ) else {
+            return false
+        }
+        event.flags = isDown ? .maskAlternate : []
+        event.post(tap: .cghidEventTap)
         return true
     }
 
@@ -1140,8 +1221,13 @@ public final class CodexMacAutomation {
         var stopControls: [DictationControl] = []
         var stack: [(element: AXUIElement, depth: Int)] = [(root, 0)]
         var visitedCount = 0
+        var traversalComplete = true
 
-        while let current = stack.popLast(), visitedCount < 5_000 {
+        while let current = stack.popLast() {
+            guard visitedCount < CodexDictationTraversalPolicy.nodeLimit else {
+                traversalComplete = false
+                break
+            }
             visitedCount += 1
             if let candidate = dictationControl(
                 from: current.element,
@@ -1155,17 +1241,28 @@ public final class CodexMacAutomation {
                 }
             }
 
-            guard current.depth < 30 else { continue }
-            for child in children(of: current.element).reversed() {
+            let childElements = children(of: current.element)
+            guard current.depth < CodexDictationTraversalPolicy.maximumDepth else {
+                if !childElements.isEmpty { traversalComplete = false }
+                continue
+            }
+            for child in childElements.reversed() {
                 stack.append((child, current.depth + 1))
             }
         }
 
         // An incomplete traversal or multiple exact controls is not safe
         // enough for focused activation. Refuse instead of guessing.
-        guard stack.isEmpty,
-              startControls.count <= 1,
-              stopControls.count <= 1 else {
+        let completedTraversal = traversalComplete && stack.isEmpty
+        let discoveryAccepted = CodexDictationTraversalPolicy.accepts(
+            traversalComplete: completedTraversal,
+            startControlCount: startControls.count,
+            stopControlCount: stopControls.count
+        )
+        guard discoveryAccepted else {
+            logger.info(
+                "dictation discovery=unavailable visited=\(visitedCount, privacy: .public) complete=\(completedTraversal, privacy: .public) start=\(startControls.count, privacy: .public) stop=\(stopControls.count, privacy: .public)"
+            )
             return DictationSnapshot(
                 startControl: nil,
                 stopControl: nil,
@@ -1214,28 +1311,47 @@ public final class CodexMacAutomation {
             return nil
         }
 
-        let tree = traversal(of: window, limit: 5_000, maxDepth: 30)
-        guard tree.complete else { return nil }
-        let candidates = tree.entries.compactMap { entry -> ComposerControl? in
-            guard stringAttribute(entry.element, kAXRoleAttribute) ==
-                    (kAXTextAreaRole as String),
-                  boolAttribute(entry.element, kAXFocusedAttribute) == true,
-                  boolAttribute(entry.element, "AXEditable") == true,
-                  let count = integerAttribute(
-                    entry.element,
-                    kAXNumberOfCharactersAttribute
-                  ),
-                  count >= 0 else {
-                return nil
-            }
-            return ComposerControl(
-                element: entry.element,
+        guard let focusedElement = elementAttribute(
+                application,
+                kAXFocusedUIElementAttribute
+              ),
+              let elementWindow = elementAttribute(
+                focusedElement,
+                kAXWindowAttribute
+              ),
+              let count = integerAttribute(
+                focusedElement,
+                kAXNumberOfCharactersAttribute
+              ),
+              CodexFocusedComposerPolicy.accepts(
+                roleIsTextArea: stringAttribute(
+                    focusedElement,
+                    kAXRoleAttribute
+                ) == (kAXTextAreaRole as String),
+                isFocused: boolAttribute(
+                    focusedElement,
+                    kAXFocusedAttribute
+                ) == true,
+                belongsToFocusedWindow: CFEqual(elementWindow, window),
+                explicitEditable: boolAttribute(
+                    focusedElement,
+                    "AXEditable"
+                ),
+                valueIsSettable: isAttributeSettable(
+                    focusedElement,
+                    kAXValueAttribute
+                ),
+                numberOfCharacters: count
+              ) else {
+            return nil
+        }
+        return ComposerSnapshot(
+            control: ComposerControl(
+                element: focusedElement,
                 window: window,
                 numberOfCharacters: count
             )
-        }
-        guard candidates.count == 1 else { return nil }
-        return ComposerSnapshot(control: candidates[0])
+        )
     }
 
     private func waitForComposerCleared(
@@ -1438,13 +1554,33 @@ public final class CodexMacAutomation {
         return result
     }
 
+    private func logDoubaoVoiceShortcutResult(
+        _ result: DoubaoVoiceShortcutAutomationResult
+    ) -> DoubaoVoiceShortcutAutomationResult {
+        logger.info(
+            "doubao-voice result=\(result.logValue, privacy: .public)"
+        )
+        return result
+    }
+
     private func logComposerSubmitResult(
-        _ result: CodexComposerSubmitAutomationResult
+        _ result: CodexComposerSubmitAutomationResult,
+        reason: String? = nil
     ) -> CodexComposerSubmitAutomationResult {
-        let value = result == .composerClearedConfirmed
-            ? "composer-cleared-confirmed"
-            : "unavailable"
-        logger.info("submit result=\(value, privacy: .public)")
+        let value: String
+        switch result {
+        case .composerClearedConfirmed:
+            value = "composer-cleared-confirmed"
+        case .shortcutPostedWithoutUIConfirmation:
+            value = "shortcut-posted-unconfirmed"
+        case .unavailable:
+            value = "unavailable"
+        }
+        if let reason {
+            logger.info("submit result=\(value, privacy: .public) reason=\(reason, privacy: .public)")
+        } else {
+            logger.info("submit result=\(value, privacy: .public)")
+        }
         return result
     }
 
@@ -1475,6 +1611,21 @@ public final class CodexMacAutomation {
         _ attribute: String
     ) -> Bool? {
         (copyAttribute(element, attribute) as? NSNumber)?.boolValue
+    }
+
+    private func isAttributeSettable(
+        _ element: AXUIElement,
+        _ attribute: String
+    ) -> Bool {
+        var settable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(
+            element,
+            attribute as CFString,
+            &settable
+        ) == .success else {
+            return false
+        }
+        return settable.boolValue
     }
 
     private func integerAttribute(
@@ -1736,5 +1887,6 @@ private struct KeyCode: RawRepresentable {
     static let f16 = KeyCode(rawValue: 106)
     static let f17 = KeyCode(rawValue: 64)
     static let f18 = KeyCode(rawValue: 79)
+    static let rightOption = KeyCode(rawValue: 61)
 
 }

@@ -1,21 +1,20 @@
 import XCTest
 @testable import AgentControllerPlatform
 
-final class LiveCodexDictationTests: XCTestCase {
+final class LiveDoubaoVoiceShortcutTests: XCTestCase {
     @MainActor
-    func testCurrentCodexDictationRoundTrip() async throws {
+    func testCurrentDoubaoVoiceShortcutRoundTrip() throws {
         guard ProcessInfo.processInfo.environment[
-            "RUN_LIVE_CODEX_DICTATION_TEST"
+            "RUN_LIVE_DOUBAO_VOICE_TEST"
         ] == "1" else {
-            throw XCTSkip("live Codex test is opt-in")
+            throw XCTSkip("live Doubao voice shortcut test is opt-in")
         }
 
         let automation = CodexMacAutomation()
         XCTAssertTrue(automation.isCodexForeground)
-        let started = await automation.setDictation(recording: true)
-        XCTAssertTrue(started.succeeded, "start: \(started.diagnostic)")
-        try await Task.sleep(for: .milliseconds(250))
-        let stopped = await automation.setDictation(recording: false)
-        XCTAssertTrue(stopped.succeeded, "stop: \(stopped.diagnostic)")
+        let started = automation.setDoubaoVoiceShortcut(recording: true)
+        XCTAssertTrue(started.applied, "start: \(started.diagnostic)")
+        let stopped = automation.setDoubaoVoiceShortcut(recording: false)
+        XCTAssertTrue(stopped.applied, "stop: \(stopped.diagnostic)")
     }
 }

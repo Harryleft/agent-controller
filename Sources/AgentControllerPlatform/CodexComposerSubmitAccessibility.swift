@@ -1,6 +1,45 @@
 import Foundation
 import AgentControllerCore
 
+/// Electron versions differ on whether a writable AXTextArea publishes the
+/// optional AXEditable attribute. An explicit false always wins; when the
+/// attribute is absent, writability of AXValue is the content-free fallback.
+enum CodexComposerEditabilityPolicy {
+    static func accepts(
+        explicitEditable: Bool?,
+        valueIsSettable: Bool
+    ) -> Bool {
+        switch explicitEditable {
+        case .some(true): true
+        case .some(false): false
+        case .none: valueIsSettable
+        }
+    }
+}
+
+/// Content-free admission for the one element macOS reports as focused.
+/// Using AXFocusedUIElement avoids coupling submit to the size or depth of the
+/// rest of Codex's Electron accessibility tree.
+enum CodexFocusedComposerPolicy {
+    static func accepts(
+        roleIsTextArea: Bool,
+        isFocused: Bool,
+        belongsToFocusedWindow: Bool,
+        explicitEditable: Bool?,
+        valueIsSettable: Bool,
+        numberOfCharacters: Int?
+    ) -> Bool {
+        roleIsTextArea &&
+            isFocused &&
+            belongsToFocusedWindow &&
+            CodexComposerEditabilityPolicy.accepts(
+                explicitEditable: explicitEditable,
+                valueIsSettable: valueIsSettable
+            ) &&
+            numberOfCharacters.map { $0 >= 0 } == true
+    }
+}
+
 /// Content-free AX facts for the one composer that may be used by Base X.
 ///
 /// This deliberately has no AXValue, label, placeholder, prompt, or reply.
@@ -216,12 +255,17 @@ public enum CodexControllerSessionGate: Sendable {
 /// It must never be rendered as a completed Codex turn.
 public enum CodexComposerSubmitAutomationResult: Equatable, Sendable {
     case composerClearedConfirmed
+    /// F18 was sent to the foreground Codex process, but Electron did not
+    /// expose the composer metadata required for a UI receipt.
+    case shortcutPostedWithoutUIConfirmation
     case unavailable
 
     public var diagnostic: String {
         switch self {
         case .composerClearedConfirmed:
             "Composer 已清空（已确认）"
+        case .shortcutPostedWithoutUIConfirmation:
+            "提交已发送（未验证）"
         case .unavailable:
             "提交 · Unavailable"
         }

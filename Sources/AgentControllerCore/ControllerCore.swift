@@ -168,6 +168,10 @@ public enum ControllerAction: Equatable, Sendable {
     case stopTask
     case startDictation
     case stopDictation
+    /// X is an explicit finish-and-send operation while the LT-owned voice
+    /// session is active.  Keeping this as one intent prevents AppModel from
+    /// posting Return before the input method has received Right Option up.
+    case finishDictationAndSubmit
     case navigate(NavigationDirection)
     case workspaceCatalog(WorkspaceCatalogIntent)
     case questionAnswer(QuestionAnswerNavigationIntent)
@@ -316,6 +320,9 @@ public struct ControllerMappingEngine: Sendable {
     private var previousForegroundRequirement = false
     private var previousStickDirection: NavigationDirection?
     private var suppressNavigationUntilDirectionalRelease = false
+    /// LT 是一次按下启动、下一次按下停止的锁定式语音开关。分开保存
+    /// 物理扳机边沿和语音状态，避免松开 LT 立即结束豆包的按住说话。
+    private var dictationTriggerPressed = false
     private var dictationActive = false
     private var commandPushToTalkActive = false
     private var runningLayerActive = false
@@ -425,11 +432,18 @@ public struct ControllerMappingEngine: Sendable {
             }
         }
 
-        // LT is exclusive: while recording (and on its start/stop samples),
-        // no held shoulder, face button, or directional input can cross into
-        // another layer when the trigger is released.
-        if triggerAction != nil || dictationActive {
+        // LT is exclusive while a voice session is active, except X: X is the
+        // deliberate "finish speech, then send" escape hatch.  This avoids a
+        // third accidental LT press making the visible submit control inert.
+        if triggerAction != nil {
             absorbInputDuringDictation(snapshot, deadZone: configuredDeadZone)
+        } else if dictationActive {
+            if pressed(.x, in: snapshot) {
+                dictationActive = false
+                actions.append(.finishDictationAndSubmit)
+            } else {
+                absorbInputDuringDictation(snapshot, deadZone: configuredDeadZone)
+            }
         } else if runningLayerActive ||
             snapshot.rightTrigger >= Self.runningStartThreshold
         {
@@ -473,13 +487,15 @@ public struct ControllerMappingEngine: Sendable {
     }
 
     private mutating func processDictation(_ snapshot: ControllerSnapshot) -> ControllerAction? {
-        if !dictationActive && snapshot.leftTrigger >= Self.dictationStartThreshold {
-            dictationActive = true
-            return .startDictation
+        if !dictationTriggerPressed,
+           snapshot.leftTrigger >= Self.dictationStartThreshold {
+            dictationTriggerPressed = true
+            dictationActive.toggle()
+            return dictationActive ? .startDictation : .stopDictation
         }
-        if dictationActive && snapshot.leftTrigger <= Self.dictationStopThreshold {
-            dictationActive = false
-            return .stopDictation
+        if dictationTriggerPressed,
+           snapshot.leftTrigger <= Self.dictationStopThreshold {
+            dictationTriggerPressed = false
         }
         return nil
     }
@@ -869,6 +885,7 @@ public struct ControllerMappingEngine: Sendable {
     private mutating func clearTransientState() {
         previousStickDirection = nil
         suppressNavigationUntilDirectionalRelease = false
+        dictationTriggerPressed = false
         dictationActive = false
         clearLayerState()
         cancelStartedAt = nil
@@ -945,7 +962,11 @@ public struct ControllerMappingEngine: Sendable {
 
     private mutating func drainSafetyActions() -> [ControllerAction] {
         var actions: [ControllerAction] = []
-        if dictationActive { actions.append(.stopDictation) }
+        if dictationActive {
+            dictationActive = false
+            actions.append(.stopDictation)
+        }
+        dictationTriggerPressed = false
         if commandPushToTalkActive {
             actions.append(.command(.stopPushToTalk))
         }

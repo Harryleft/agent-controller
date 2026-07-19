@@ -24,35 +24,11 @@ struct ControllerHUDHost: View {
         ControllerHUDRuntimeState(
             bridgeEnabled: model.bridgeEnabled,
             codexForeground: model.codexForeground,
-            controllerConnected: model.isControllerConnected,
-            activeLayer: activeLayer(from: model.controllerInputLayer),
-            layerStatuses: hudLayerStatuses,
-            slotStatuses: model.workspaceSlotStatuses
-        )
-    }
-
-    private var hudLayerStatuses: [ControllerHUDLayer: ControllerHUDStatus] {
-        ControllerHUDLayerStatusResolver.resolve(
-            workspaceCatalogAvailable: model.workspaceCatalogAvailable,
-            actionStatus: model.actionPanelStatus,
-            commandStatus: model.commandLayerStatus,
-            runningStatus: model.runningLayerStatus
+            controllerConnected: model.isControllerConnected
         )
     }
 
     private func refreshHUD(_ state: ControllerHUDRuntimeState) {
         hud.update(runtimeState: state)
-    }
-
-    private func activeLayer(
-        from layer: ControllerInputLayer
-    ) -> ControllerHUDLayer {
-        switch layer {
-        case .base: .base
-        case .agent: .leftShoulder
-        case .command: .rightShoulder
-        case .running: .rightTrigger
-        case .actionPanel: .action
-        }
     }
 }

@@ -35,7 +35,7 @@ final class ControllerHUDPanelController: ObservableObject {
             language: language
         )
         hostingView?.rootView = view
-        let fittingSize = hostingView?.fittingSize ?? NSSize(width: 430, height: 220)
+        let fittingSize = hostingView?.fittingSize ?? NSSize(width: 300, height: 120)
         panel.setContentSize(fittingSize)
         guard position(panel, size: fittingSize) else {
             hide()
@@ -75,8 +75,7 @@ final class ControllerHUDPanelController: ObservableObject {
             rootView: ControllerHUDView(
                 presentation: ControllerHUDPresentation(
                     isVisible: false,
-                    layers: [],
-                    slots: []
+                    actions: []
                 ),
                 language: .current
             )

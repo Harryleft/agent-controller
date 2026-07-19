@@ -1,23 +1,19 @@
 import Foundation
 
-/// The HUD owns no controller or Codex state. It only renders the small,
-/// privacy-preserving runtime projection passed in by the app layer.
-enum ControllerHUDLayer: String, CaseIterable, Equatable, Hashable, Sendable, Identifiable {
-    case base
-    case leftShoulder
-    case rightShoulder
-    case rightTrigger
-    case action
-
-    var id: String { rawValue }
-}
-
+/// Internal availability state retained for AppModel's experimental catalog.
+/// The simplified HUD intentionally does not render these values.
 enum ControllerHUDStatus: Equatable, Sendable {
     case confirmed
-    /// App-owned state only; it is not a Codex UI success receipt.
     case local
     case unavailable
     case unknown
+}
+
+enum ControllerHUDAction: String, CaseIterable, Equatable, Sendable, Identifiable {
+    case dictation
+    case submit
+
+    var id: String { rawValue }
 }
 
 enum ControllerHUDLanguage: Equatable, Sendable {
@@ -39,155 +35,48 @@ struct ControllerHUDRuntimeState: Equatable, Sendable {
     let bridgeEnabled: Bool
     let codexForeground: Bool
     let controllerConnected: Bool
-    let activeLayer: ControllerHUDLayer
-    let layerStatuses: [ControllerHUDLayer: ControllerHUDStatus]
-    let slotStatuses: [ControllerHUDStatus]
-
-    init(
-        bridgeEnabled: Bool,
-        codexForeground: Bool,
-        controllerConnected: Bool,
-        activeLayer: ControllerHUDLayer = .base,
-        layerStatuses: [ControllerHUDLayer: ControllerHUDStatus] =
-            Self.defaultLayerStatuses,
-        slotStatuses: [ControllerHUDStatus] = []
-    ) {
-        self.bridgeEnabled = bridgeEnabled
-        self.codexForeground = codexForeground
-        self.controllerConnected = controllerConnected
-        self.activeLayer = activeLayer
-        self.layerStatuses = layerStatuses
-        self.slotStatuses = slotStatuses
-    }
-
-    static let defaultLayerStatuses: [ControllerHUDLayer: ControllerHUDStatus] = [
-        .base: .confirmed,
-        .leftShoulder: .unknown,
-        .rightShoulder: .unavailable,
-        .rightTrigger: .unavailable,
-        .action: .unavailable
-    ]
-}
-
-/// Keeps the per-layer availability projection pure and privacy-safe so HUD
-/// tests can prove that a missing Codex receipt is never painted as success.
-enum ControllerHUDLayerStatusResolver {
-    static func resolve(
-        workspaceCatalogAvailable: Bool,
-        actionStatus: ControllerHUDStatus,
-        commandStatus: ControllerHUDStatus,
-        runningStatus: ControllerHUDStatus
-    ) -> [ControllerHUDLayer: ControllerHUDStatus] {
-        var statuses = ControllerHUDRuntimeState.defaultLayerStatuses
-        statuses[.leftShoulder] = workspaceCatalogAvailable
-            ? .local
-            : .unavailable
-        statuses[.action] = actionStatus
-        statuses[.rightShoulder] = commandStatus
-        statuses[.rightTrigger] = runningStatus
-        return statuses
-    }
 }
 
 struct ControllerHUDPresentation: Equatable, Sendable {
-    struct Layer: Equatable, Sendable, Identifiable {
-        let kind: ControllerHUDLayer
-        let status: ControllerHUDStatus
-        let isActive: Bool
-
-        var id: ControllerHUDLayer { kind }
-    }
-
-    struct Slot: Equatable, Sendable, Identifiable {
-        let position: Int
-        let status: ControllerHUDStatus
-
-        var id: Int { position }
-    }
-
     let isVisible: Bool
-    let layers: [Layer]
-    let slots: [Slot]
+    let actions: [ControllerHUDAction]
+
+    static let hidden = Self(isVisible: false, actions: [])
 
     static func resolve(from runtime: ControllerHUDRuntimeState) -> Self {
         guard runtime.bridgeEnabled,
               runtime.codexForeground,
-              runtime.controllerConnected,
-              runtime.activeLayer != .base else {
-            return Self(isVisible: false, layers: [], slots: [])
+              runtime.controllerConnected else {
+            return .hidden
         }
-
-        let layers = ControllerHUDLayer.allCases.map { kind in
-            Layer(
-                kind: kind,
-                status: runtime.layerStatuses[kind] ?? .unknown,
-                isActive: runtime.activeLayer == kind
-            )
-        }
-        let normalizedSlots = Array(runtime.slotStatuses.prefix(6)) +
-            Array(
-                repeating: .unknown,
-                count: max(0, 6 - runtime.slotStatuses.count)
-            )
-        let slots = normalizedSlots.enumerated().map { offset, status in
-            Slot(position: offset + 1, status: status)
-        }
-        return Self(isVisible: true, layers: layers, slots: slots)
+        return Self(isVisible: true, actions: ControllerHUDAction.allCases)
     }
 }
 
 enum ControllerHUDCopy {
     static func title(_ language: ControllerHUDLanguage) -> String {
-        language == .chinese ? "手柄 HUD" : "Controller HUD"
+        language == .chinese ? "手柄控制" : "Controller"
     }
 
-    static func slotsTitle(_ language: ControllerHUDLanguage) -> String {
-        language == .chinese ? "任务槽" : "Task slots"
-    }
-
-    static func readyTitle(_ language: ControllerHUDLanguage) -> String {
-        language == .chinese ? "Codex 已就绪" : "Codex ready"
-    }
-
-    static func actionUnavailableNotice(
-        _ language: ControllerHUDLanguage
-    ) -> String {
-        language == .chinese
-            ? "Action 动作尚无已验证的精确 AX 路径"
-            : "Action commands lack a verified exact AX route"
-    }
-
-    static func layer(
-        _ layer: ControllerHUDLayer,
+    static func key(
+        _ action: ControllerHUDAction,
         language: ControllerHUDLanguage
     ) -> String {
-        switch (layer, language) {
-        case (.base, .chinese): "基础"
-        case (.leftShoulder, .chinese): "LB"
-        case (.rightShoulder, .chinese): "RB"
-        case (.rightTrigger, .chinese): "RT"
-        case (.action, .chinese): "动作"
-        case (.base, .english): "Base"
-        case (.leftShoulder, .english): "LB"
-        case (.rightShoulder, .english): "RB"
-        case (.rightTrigger, .english): "RT"
-        case (.action, .english): "Action"
+        switch action {
+        case .dictation: "LT"
+        case .submit: "X"
         }
     }
 
-    static func status(
-        _ status: ControllerHUDStatus,
+    static func action(
+        _ action: ControllerHUDAction,
         language: ControllerHUDLanguage
     ) -> String {
-        switch (status, language) {
-        case (.confirmed, .chinese): "已确认"
-        case (.local, .chinese): "仅本地"
-        case (.unavailable, .chinese): "不可用"
-        case (.unknown, .chinese): "未知"
-        case (.confirmed, .english): "Confirmed"
-        case (.local, .english): "Local only"
-        case (.unavailable, .english): "Unavailable"
-        case (.unknown, .english): "Unknown"
+        switch (action, language) {
+        case (.dictation, .chinese): "按一下开始，再按一下结束"
+        case (.submit, .chinese): "提交当前输入"
+        case (.dictation, .english): "Press once to start, again to stop"
+        case (.submit, .english): "Submit current input"
         }
     }
 }
