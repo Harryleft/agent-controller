@@ -157,6 +157,8 @@ swift test
 
 初始化命令可幂等重复执行，用于让本机重建保持稳定的 TCC 身份。构建脚本会生成并本地签名 `dist/AgentControllerMac.app`；该预览版未做 Developer ID 签名或公证。LT 使用用户在豆包输入法中配置的右 Option 语音快捷键，X 向前台 Codex 投递 Return；两者需要事件投递权限，LT 还需要辅助功能权限与豆包/Codex 可用的麦克风权限。具体按键和验收步骤见 [macOS 指南](docs/macos.md)。
 
+`--verify` 只检查构建、签名、手柄声明与进程启动，不证明真实手柄输入、语音转写或 Codex 提交。若只做不启动 GUI 的机械验证，运行 `./script/verify_unattended.sh --no-relaunch`。
+
 #### Windows v0.7
 
 先安装 .NET 9 SDK，然后运行：
@@ -188,7 +190,7 @@ dotnet test app.Tests/AgentController.Tests.csproj -c Release
 仓库中的主要路径为：
 
 - `app/` 与 `app.Tests/` —— Windows WPF 运行时及其回归测试；
-- `Package.swift`、`Sources/` 与 `Tests/` —— 原生 macOS 运行时及其单元/实时测试 target；
+- `Package.swift`、`Sources/` 与 `Tests/` —— 原生 macOS 运行时及其单元测试 target；
 - `scripts/` —— 可复现的 Windows Release 封包脚本；
 - `script/` —— macOS 签名、构建、运行与诊断脚本；
 - `docs/macos.md` —— macOS 构建、权限、安全与真机验收的权威入口；

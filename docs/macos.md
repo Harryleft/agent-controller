@@ -17,7 +17,7 @@ macOS 端是独立的 SwiftPM/SwiftUI 小型桥接，只保留两个已在真机
 - LT 需要事件投递与辅助功能授权；Codex/豆包输入法仍需自行具备麦克风权限。
 - Return 的投递只证明事件已发送，是否真正提交以用户在 Codex 界面中的观察为准。
 
-## 构建与验收
+## 构建验证与真机验收
 
 ```bash
 cd agent-controller
@@ -27,5 +27,13 @@ swift test
 ```
 
 构建产物为 `dist/AgentControllerMac.app`，仅使用本地开发签名，未做 Developer ID 签名或公证。
+
+`--verify` 只验证 Swift 构建、应用签名、手柄声明和进程启动；它不证明辅助功能权限、手柄输入、豆包转写或 Codex 提交已经成功。若只需不重启 GUI 的机械验证，运行：
+
+```bash
+./script/verify_unattended.sh --no-relaunch
+```
+
+需要收集不含 Codex 正文的手柄运行证据时，可运行 `./script/verify_unattended.sh --collect-logs 30`。该日志仍不能替代界面中的真实转写与提交确认。
 
 真机验收顺序：连接手柄并回中；LT 开始说话；再次 LT 或直接 X 结束语音；确认豆包文本进入 Codex 输入框；按 X 并在界面确认消息已提交。

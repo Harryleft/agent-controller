@@ -157,6 +157,8 @@ swift test
 
 The setup command is idempotent and gives local rebuilds a stable TCC identity. The build script stages and locally signs `dist/AgentControllerMac.app`; the preview is not Developer ID-signed or notarized. LT holds the user-configured Right Option Doubao voice shortcut; X posts Return only while Codex is foreground. Both require event-posting permission; LT also requires Accessibility plus a microphone available to Doubao/Codex. Supported mappings and physical acceptance steps are documented in [the macOS guide](docs/macos.md).
 
+`--verify` checks the build, signature, controller declaration, and process launch; it does not prove physical controller input, transcription, or Codex submission. For a non-GUI mechanical check, run `./script/verify_unattended.sh --no-relaunch`.
+
 #### Windows v0.7
 
 Install the .NET 9 SDK, then run:
@@ -188,7 +190,7 @@ On the morning of July 17, 2026, I finally lost patience and called it out, beca
 Key paths in the repository are:
 
 - `app/` and `app.Tests/` — the Windows WPF runtime and its regression tests;
-- `Package.swift`, `Sources/`, and `Tests/` — the native macOS runtime and its unit/live-test targets;
+- `Package.swift`, `Sources/`, and `Tests/` — the native macOS runtime and its unit-test targets;
 - `scripts/` — reproducible Windows Release packaging;
 - `script/` — macOS signing, build, run, and diagnostics helpers;
 - `docs/macos.md` — the authoritative macOS build, permission, safety, and physical-test guide;
