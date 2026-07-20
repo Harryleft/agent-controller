@@ -37,7 +37,7 @@ public enum DoubaoVoiceShortcutAutomationResult: Equatable, Sendable {
         }
     }
 
-    var logValue: String {
+    public var logValue: String {
         switch self {
         case .held: "held"
         case .released: "released"

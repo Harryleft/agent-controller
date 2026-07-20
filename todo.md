@@ -11,7 +11,6 @@ in `docs/macos.md`.
 
 ## macOS preview
 
-- [ ] Add a configurable submit binding for users whose Codex Enter behavior is not “send”.
 - [ ] Validate additional Xbox models and wired USB connections without extrapolating from the single 2026-07-18 Xbox Wireless Controller test.
 - [ ] Add Developer ID Application signing, Hardened Runtime, notarization, packaging, and upgrade handling before publishing a macOS Release.
 

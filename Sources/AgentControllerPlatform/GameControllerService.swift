@@ -3,44 +3,36 @@ import GameController
 import OSLog
 import AgentControllerCore
 
-/// 将 macOS GameController 事件归一化为核心层快照。
+/// 只读取 Xbox 手柄的 LT 和 X。连接、断连与睡眠时向上游发布安全边界。
 @MainActor
 public final class GameControllerService {
     public private(set) var currentSnapshot: ControllerSnapshot = .disconnected
-    public private(set) var currentDevice: ControllerDeviceDescriptor?
-    public private(set) var inputGeneration: UInt64 = 0
 
     public var onSnapshot: ((ControllerSnapshot) -> Void)?
-    public var onDeviceChange: ((ControllerDeviceDescriptor?) -> Void)?
+    public var onDeviceChange: ((String?) -> Void)?
     public var onSystemPowerBoundary: ((SystemPowerBoundary) -> Void)?
 
     private var controller: GCController?
-    private var activeDeviceReducer =
-        ActiveControllerDeviceReducer<ObjectIdentifier>()
     private var notificationTokens: [NSObjectProtocol] = []
     private let systemPowerObserver: any SystemPowerObserver
-    private var systemPowerEpoch = SystemPowerEpochReducer()
-    private var lastDiagnosticSignature: String?
+    private var lastInputSignature: String?
     private let logger = Logger(
         subsystem: "com.harryleft.agent-controller.macos",
         category: "Controller"
     )
 
     public init(
-        systemPowerObserver: any SystemPowerObserver =
-            NSWorkspaceSystemPowerObserver()
+        systemPowerObserver: any SystemPowerObserver = NSWorkspaceSystemPowerObserver()
     ) {
         self.systemPowerObserver = systemPowerObserver
     }
 
-    /// 开始监听已连接和后续连接的扩展手柄。
     public func start() {
         guard notificationTokens.isEmpty else { return }
-
         GCController.shouldMonitorBackgroundEvents = true
         systemPowerObserver.start(
-            onWillSleep: { [weak self] in self?.handleWillSleep() },
-            onDidWake: { [weak self] in self?.handleDidWake() }
+            onWillSleep: { [weak self] in self?.publishPowerBoundary(.willSleep) },
+            onDidWake: { [weak self] in self?.publishPowerBoundary(.didWake) }
         )
         let center = NotificationCenter.default
         notificationTokens = [
@@ -49,312 +41,89 @@ public final class GameControllerService {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.selectFirstExtendedGamepad()
-                }
+                MainActor.assumeIsolated { self?.attachFirstController() }
             },
             center.addObserver(
                 forName: .GCControllerDidDisconnect,
                 object: nil,
                 queue: .main
-            ) { [weak self] notification in
-                // Notification is not Sendable. Reduce it to the immutable
-                // process-local identity before crossing into MainActor.
-                let disconnectedDeviceID = (
-                    notification.object as? GCController
-                ).map(ObjectIdentifier.init)
-                MainActor.assumeIsolated {
-                    self?.handleDisconnectNotification(disconnectedDeviceID)
-                }
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.attachFirstController() }
             }
         ]
-
-        selectFirstExtendedGamepad()
+        attachFirstController()
     }
 
-    /// 停止接收手柄状态，并向上游明确发布断连状态。
     public func stop() {
         notificationTokens.forEach(NotificationCenter.default.removeObserver)
         notificationTokens.removeAll()
         systemPowerObserver.stop()
-        disconnect()
+        detach()
     }
 
-    /// Reconciles the active device against GameController's current
-    /// controller inventory. This is deliberately lifecycle-only: it never
-    /// manufactures an input snapshot or treats a quiet controller as asleep.
-    ///
-    /// Call this periodically in addition to observing connect/disconnect
-    /// notifications, as Apple's public API specifies both mechanisms for
-    /// connection lifecycle tracking.
-    public func reconcileControllerInventory() {
-        selectFirstExtendedGamepad()
-    }
-
-    private func selectFirstExtendedGamepad(
-        excludingDeviceID: ObjectIdentifier? = nil
-    ) {
-        let candidates = GCController.controllers().filter {
-            ObjectIdentifier($0) != excludingDeviceID &&
-                $0.extendedGamepad != nil
-        }
-        let candidateIDs = candidates.map(ObjectIdentifier.init)
-
-        switch activeDeviceReducer.reconcile(availableDeviceIDs: candidateIDs) {
-        case .unchanged, .nonActiveDisconnectIgnored:
+    private func attachFirstController() {
+        guard let candidate = GCController.controllers().first(where: {
+            $0.extendedGamepad != nil
+        }) else {
+            detach()
             return
-        case .activeDisconnected:
-            detachCurrentControllerAndPublishDisconnect()
-            selectFirstExtendedGamepad(excludingDeviceID: excludingDeviceID)
-            return
-        case let .activate(deviceID):
-            guard let candidate = candidates.first(where: {
-                ObjectIdentifier($0) == deviceID
-            }) else {
-                // The Core reducer only selects from `candidates`; if that
-                // invariant is ever broken, fail closed rather than attaching
-                // an arbitrary controller.
-                activeDeviceReducer.reset()
-                detachCurrentControllerAndPublishDisconnect()
-                return
-            }
-            attach(candidate)
         }
-    }
-
-    private func attach(_ candidate: GCController) {
-        controller?.extendedGamepad?.valueChangedHandler = nil
+        guard controller !== candidate else { return }
+        detach()
         controller = candidate
-
-        let device = ControllerDeviceDescriptor(
-            vendorName: candidate.vendorName,
-            productCategory: candidate.productCategory,
-            profileIsXbox: candidate.extendedGamepad is GCXboxGamepad,
-            hasExtendedGamepad: true
-        )
-        currentDevice = device
-        onDeviceChange?(device)
-        let vendor = device.vendorName ?? "unknown"
-        let product = device.productCategory ?? "unknown"
-        logger.info("connected vendor=\(vendor, privacy: .public) product=\(product, privacy: .public) xboxProfile=\(device.profileIsXbox, privacy: .public) classification=\(device.category.rawValue, privacy: .public)")
-
-        guard candidate.extendedGamepad != nil else {
-            disconnect()
-            return
-        }
-        installValueChangedHandler(for: candidate)
-        publishInitialSnapshot(
-            from: candidate,
-            evidence: .lifecycleAttach
-        )
+        let name = candidate.vendorName ?? candidate.productCategory
+        onDeviceChange?(name)
+        logger.info("connected name=\(name, privacy: .public)")
+        installHandler(for: candidate)
+        publish(readSnapshot(from: candidate))
     }
 
-    private func installValueChangedHandler(for candidate: GCController) {
-        guard let gamepad = candidate.extendedGamepad else { return }
-        let handlerGeneration = inputGeneration
-        gamepad.valueChangedHandler = { [weak self, weak candidate] _, _ in
-            Task { @MainActor [weak self, weak candidate] in
-                guard let self, let candidate, self.controller === candidate else { return }
-                self.publishFreshSnapshot(
-                    from: candidate,
-                    generation: handlerGeneration
-                )
-            }
-        }
-    }
-
-    private func handleDisconnectNotification(
-        _ disconnectedDeviceID: ObjectIdentifier?
-    ) {
-        guard let disconnectedDeviceID else {
-            selectFirstExtendedGamepad()
-            return
-        }
-
-        switch activeDeviceReducer.disconnectNotified(
-            for: disconnectedDeviceID
-        ) {
-        case .nonActiveDisconnectIgnored, .unchanged, .activate(_):
-            return
-        case .activeDisconnected:
-            detachCurrentControllerAndPublishDisconnect()
-            selectFirstExtendedGamepad(excludingDeviceID: disconnectedDeviceID)
-        }
-    }
-
-    private func disconnect() {
-        activeDeviceReducer.reset()
-        detachCurrentControllerAndPublishDisconnect()
-    }
-
-    private func detachCurrentControllerAndPublishDisconnect() {
-        let hadController = controller != nil || currentDevice != nil
+    private func detach() {
+        guard controller != nil || currentSnapshot.isConnected else { return }
         controller?.extendedGamepad?.valueChangedHandler = nil
         controller = nil
-        currentDevice = nil
-        lastDiagnosticSignature = nil
+        currentSnapshot = .disconnected
+        lastInputSignature = nil
         onDeviceChange?(nil)
-        publish(.disconnected)
-        if hadController {
-            logger.info("disconnected")
-        }
+        onSnapshot?(.disconnected)
+        logger.info("disconnected")
     }
 
-    private func publishFreshSnapshot(
-        from controller: GCController,
-        generation: UInt64
-    ) {
-        guard systemPowerEpoch.acceptGameControllerDelivery(
-            generation: generation
-        ) else {
-            logger.info(
-                "input boundary=delivery-rejected epoch=\(generation, privacy: .public) gate=\(self.powerGateLogValue, privacy: .public)"
-            )
-            return
-        }
-        publish(readSnapshot(from: controller))
-    }
-
-    private func publishInitialSnapshot(
-        from controller: GCController,
-        evidence: SystemPowerEpochReducer.SnapshotEvidence
-    ) {
-        let snapshot = readSnapshot(from: controller)
-        switch systemPowerEpoch.admission(for: evidence) {
-        case .forwardToNeutralGate:
-            publish(snapshot)
-        case .cacheOnly:
-            currentSnapshot = snapshot
-            logDiagnosticChange(snapshot)
+    private func installHandler(for controller: GCController) {
+        controller.extendedGamepad?.valueChangedHandler = { [weak self, weak controller] _, _ in
+            Task { @MainActor [weak self, weak controller] in
+                guard let self, let controller, self.controller === controller else { return }
+                self.publish(self.readSnapshot(from: controller))
+            }
         }
     }
 
     private func readSnapshot(from controller: GCController) -> ControllerSnapshot {
-        guard let gamepad = controller.extendedGamepad else {
-            disconnect()
-            return .disconnected
-        }
-
-        var buttons = Set<ControllerButton>()
-        insert(&buttons, .a, when: gamepad.buttonA.isPressed)
-        insert(&buttons, .b, when: gamepad.buttonB.isPressed)
-        insert(&buttons, .x, when: gamepad.buttonX.isPressed)
-        insert(&buttons, .y, when: gamepad.buttonY.isPressed)
-        insert(&buttons, .menu, when: gamepad.buttonMenu.isPressed)
-        insert(&buttons, .options, when: gamepad.buttonOptions?.isPressed == true)
-        insert(&buttons, .home, when: gamepad.buttonHome?.isPressed == true)
-        insert(&buttons, .leftShoulder, when: gamepad.leftShoulder.isPressed)
-        insert(&buttons, .rightShoulder, when: gamepad.rightShoulder.isPressed)
-        insert(&buttons, .leftThumbstick, when: gamepad.leftThumbstickButton?.isPressed == true)
-        insert(&buttons, .rightThumbstick, when: gamepad.rightThumbstickButton?.isPressed == true)
-        insert(&buttons, .dpadUp, when: gamepad.dpad.up.isPressed)
-        insert(&buttons, .dpadDown, when: gamepad.dpad.down.isPressed)
-        insert(&buttons, .dpadLeft, when: gamepad.dpad.left.isPressed)
-        insert(&buttons, .dpadRight, when: gamepad.dpad.right.isPressed)
-        insert(&buttons, .leftTrigger, when: gamepad.leftTrigger.isPressed)
-        insert(&buttons, .rightTrigger, when: gamepad.rightTrigger.isPressed)
-
-        if #available(macOS 12.0, *), let xboxGamepad = gamepad as? GCXboxGamepad {
-            insert(&buttons, .share, when: xboxGamepad.buttonShare?.isPressed == true)
-        }
-
+        guard let gamepad = controller.extendedGamepad else { return .disconnected }
         return ControllerSnapshot(
             connected: true,
-            buttons: buttons,
-            leftStick: SIMD2(
-                Double(gamepad.leftThumbstick.xAxis.value),
-                Double(gamepad.leftThumbstick.yAxis.value)
-            ),
-            rightStick: SIMD2(
-                Double(gamepad.rightThumbstick.xAxis.value),
-                Double(gamepad.rightThumbstick.yAxis.value)
-            ),
-            leftTrigger: Double(gamepad.leftTrigger.value),
-            rightTrigger: Double(gamepad.rightTrigger.value)
+            buttons: gamepad.buttonX.isPressed ? [.x] : [],
+            leftTrigger: Double(gamepad.leftTrigger.value)
         )
     }
 
     private func publish(_ snapshot: ControllerSnapshot) {
         currentSnapshot = snapshot
-        logDiagnosticChange(snapshot)
+        let signature = "x=\(snapshot.buttons.contains(.x))|lt=\(snapshot.leftTrigger >= ControllerMappingEngine.triggerPressThreshold)"
+        if signature != lastInputSignature {
+            lastInputSignature = signature
+            logger.info("input \(signature, privacy: .public)")
+        }
         onSnapshot?(snapshot)
     }
 
-    private func handleWillSleep() {
-        systemPowerEpoch.willSleep()
-        inputGeneration = systemPowerEpoch.generation
-        logger.info(
-            "power boundary=will-sleep epoch=\(self.inputGeneration, privacy: .public) gate=\(self.powerGateLogValue, privacy: .public)"
-        )
-        onSystemPowerBoundary?(.willSleep(generation: inputGeneration))
-    }
-
-    private func handleDidWake() {
-        inputGeneration = systemPowerEpoch.didWake()
-        // Replacing the handler makes pre-sleep queued callbacks retain their
-        // old generation, so they cannot affect this post-wake session.
-        if let controller {
-            installValueChangedHandler(for: controller)
-        }
-        logger.info(
-            "power boundary=did-wake epoch=\(self.inputGeneration, privacy: .public) gate=\(self.powerGateLogValue, privacy: .public)"
-        )
-        onSystemPowerBoundary?(.didWake(generation: inputGeneration))
-    }
-
-    private var powerGateLogValue: String {
-        switch systemPowerEpoch.gate {
-        case .accepting: "accepting"
-        case .sleeping: "sleeping"
-        case .awaitingCurrentGenerationDelivery: "awaiting-delivery"
-        }
-    }
-
-    /// Log only meaningful input-state transitions so a physical-controller
-    /// test is readable without persisting every analog sample.
-    private func logDiagnosticChange(_ snapshot: ControllerSnapshot) {
-        guard snapshot.isConnected else { return }
-
-        let buttons = snapshot.buttons.map(\.rawValue).sorted().joined(separator: ",")
-        let buttonSummary = buttons.isEmpty ? "none" : buttons
-        let left = direction(x: snapshot.leftX, y: snapshot.leftY)
-        let right = direction(x: snapshot.rightX, y: snapshot.rightY)
-        let leftTrigger = triggerBand(snapshot.leftTrigger)
-        let rightTrigger = triggerBand(snapshot.rightTrigger)
-        let signature = [buttonSummary, left, right, leftTrigger, rightTrigger]
-            .joined(separator: "|")
-        guard signature != lastDiagnosticSignature else { return }
-        lastDiagnosticSignature = signature
-
-        let ltValue = String(format: "%.2f", snapshot.leftTrigger)
-        let rtValue = String(format: "%.2f", snapshot.rightTrigger)
-        logger.info("input buttons=\(buttonSummary, privacy: .public) left=\(left, privacy: .public) right=\(right, privacy: .public) lt=\(ltValue, privacy: .public) rt=\(rtValue, privacy: .public)")
-    }
-
-    private func direction(x: Double, y: Double) -> String {
-        guard max(abs(x), abs(y)) >= 0.35 else { return "neutral" }
-        if abs(y) >= abs(x) { return y >= 0 ? "up" : "down" }
-        return x >= 0 ? "right" : "left"
-    }
-
-    private func triggerBand(_ value: Double) -> String {
-        if value >= ControllerMappingEngine.dictationStartThreshold { return "active" }
-        if value > ControllerMappingEngine.dictationStopThreshold { return "transition" }
-        return "released"
-    }
-
-    private func insert(
-        _ buttons: inout Set<ControllerButton>,
-        _ button: ControllerButton,
-        when isPressed: Bool
-    ) {
-        if isPressed {
-            buttons.insert(button)
-        }
+    private func publishPowerBoundary(_ boundary: SystemPowerBoundary) {
+        onSystemPowerBoundary?(boundary)
+        logger.info("power boundary=\(boundary.rawValue, privacy: .public)")
     }
 }
 
-public enum SystemPowerBoundary: Equatable, Sendable {
-    case willSleep(generation: UInt64)
-    case didWake(generation: UInt64)
+public enum SystemPowerBoundary: String, Equatable, Sendable {
+    case willSleep
+    case didWake
 }

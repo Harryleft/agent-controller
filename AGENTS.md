@@ -9,14 +9,12 @@
 
 - 验证命令：`swift test`，随后 `./script/build_and_run.sh --verify`。
 - 首次真机开发先运行 `./script/setup_local_signing.sh`；`.local-signing/`、`.build/`、`dist/` 与日志不得提交。
-- 手柄输入必须经过 Bridge、前台 Codex 与回中门禁；断连、切走前台或关闭 Bridge 时必须排空 LT 并等待回中。
-- 普通键只允许白名单动作并定向投递到已验证的 `com.openai.codex` PID；事件投递不是 UI 成功证据。
-- LT 只能在当前 Codex focused/main window 中精确匹配唯一听写按钮，验证同一控件和窗口焦点后发送 Space，再以新鲜 AX 状态确认。
-- 不得用全局鼠标、坐标点击、模糊 AX 标签、`AXPress` 或 `Ctrl+Shift+D` 代替 LT 确认链路。
-- 若听写已由用户启动，桥接不得取得所有权；开始结果不明时保留停止清理责任，不能假报成功。
+- 当前 MVP 只有 LT 与 X：LT 通过用户已配置的豆包输入法右 Option 开始/结束语音，X 向前台 `com.openai.codex` 投递 Return。
+- 手柄输入必须经过前台 Codex 与回中门禁；断连、切走前台或系统睡眠时必须释放由桥接按住的右 Option。
+- 不得重新引入任务 Catalog、模型控制、F18/keybindings 写入、Codex AX 听写、HUD 或可配置按键，除非有新的已验收功能需求。
+- 键盘事件已投递不等于 Codex UI 已完成；真实提交仍由用户在界面确认。
 
 ## 验收
 
-- 单元测试只证明状态机和标签策略；实时 AX 测试默认跳过，命令见 `docs/macos.md`。
-- 涉及 GameController、权限、Codex UI 或语音的修改必须做真机冒烟，并记录设备身份、权限、开始/停止确认和真实转写证据。
+- 单元测试只证明状态机和投递结果；涉及 GameController、权限、Codex UI 或语音的修改必须做真机冒烟，并记录真实转写与提交证据。
 - Developer ID 签名、公证或 Release 未完成前，只能称 macOS 开发预览，不能称可分发正式版。

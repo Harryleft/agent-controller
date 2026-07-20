@@ -3,29 +3,14 @@ import SwiftUI
 
 @main
 struct AgentControllerMacApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self)
-    private var appDelegate
-
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("Agent Controller", id: "main") {
-            ControllerHUDHost(model: model)
-                .frame(minWidth: 720, idealWidth: 780, minHeight: 620)
+        MenuBarExtra("Agent Controller", systemImage: "gamecontroller") {
+            Text(model.status)
+            Divider()
+            Button("退出") { NSApp.terminate(nil) }
         }
-        .windowResizability(.contentMinSize)
-
-        Settings {
-            SettingsView(model: model)
-        }
-    }
-}
-
-private final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(
-        _ notification: Notification
-    ) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        .menuBarExtraStyle(.menu)
     }
 }

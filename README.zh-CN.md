@@ -5,7 +5,7 @@
 
 ![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 
-> 平台范围：下方 v0.7 功能说明与 Release 安装步骤描述的是 Windows WPF 实现。macOS v0.1.0 是位于 `Sources/` 的独立、刻意收窄的原生 SwiftUI 预览版，使用 Apple GameController 框架并适配 Xbox 布局手柄。Developer ID 签名的 macOS Release 尚未发布；构建、权限与安全边界见 [macOS 指南](docs/macos.md)。
+> 平台范围：下方 v0.7 功能说明与 Release 安装步骤描述的是 Windows WPF 实现。macOS 是位于 `Sources/` 的独立、刻意收窄的原生预览版，只保留 Xbox 手柄 LT 豆包语音与 X 提交两个功能。Developer ID 签名的 macOS Release 尚未发布；构建、权限与安全边界见 [macOS 指南](docs/macos.md)。
 
 Codex Micro 很快就断货了。这款专为 Codex 设计的小键盘，你想买吗？但你注意到没有：
 
@@ -155,16 +155,7 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-初始化命令可幂等重复执行，用于让本机重建保持稳定的 TCC 身份。构建脚本会生成并本地签名 `dist/AgentControllerMac.app`；该预览版未做 Developer ID 签名或公证。普通手柄快捷键需要 macOS 事件投递权限；LT 语音还需要辅助功能权限和 Codex 自身的麦克风权限，用于定位并聚焦当前“听写/停止听写”控件，只向 Codex 发送 Space，再确认状态，不依赖 `Ctrl+Shift+D`。
-
-实时测试默认跳过，只验证当前 Codex 的辅助功能开始/停止回路；它不经过物理手柄，也不能证明真实说话已经转写：
-
-```bash
-RUN_LIVE_CODEX_DICTATION_TEST=1 \
-  swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
-```
-
-具体按键、已验证硬件证据、授权步骤和已知缺口见 [macOS 指南](docs/macos.md)。
+初始化命令可幂等重复执行，用于让本机重建保持稳定的 TCC 身份。构建脚本会生成并本地签名 `dist/AgentControllerMac.app`；该预览版未做 Developer ID 签名或公证。LT 使用用户在豆包输入法中配置的右 Option 语音快捷键，X 向前台 Codex 投递 Return；两者需要事件投递权限，LT 还需要辅助功能权限与豆包/Codex 可用的麦克风权限。具体按键和验收步骤见 [macOS 指南](docs/macos.md)。
 
 #### Windows v0.7
 

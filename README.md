@@ -5,7 +5,7 @@
 
 ![version](https://img.shields.io/badge/version-0.7.0--hotfix-blue) ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 
-> Platform scope: the v0.7 feature tour and Release instructions below describe the Windows WPF implementation. macOS v0.1.0 is a separate, intentionally smaller native SwiftUI preview under `Sources/`; it uses Apple's GameController framework and supports Xbox-layout controllers. There is no Developer ID-signed macOS Release yet; see [the macOS build and safety guide](docs/macos.md).
+> Platform scope: the v0.7 feature tour and Release instructions below describe the Windows WPF implementation. The separate macOS preview under `Sources/` intentionally keeps only two features: Xbox LT for Doubao voice input and X for Codex submission. There is no Developer ID-signed macOS Release yet; see [the macOS build and safety guide](docs/macos.md).
 
 Codex Micro sold out quickly. It is a tiny keyboard made specifically for Codex, and perhaps you wanted one. But consider the evidence:
 
@@ -155,16 +155,7 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-The setup command is idempotent and gives local rebuilds a stable TCC identity. The build script stages and locally signs `dist/AgentControllerMac.app`; the preview is not Developer ID-signed or notarized. Ordinary controller shortcuts require macOS event-posting permission. LT dictation additionally requires Accessibility and Codex's own microphone permission; it finds and focuses the current Dictate/Stop dictation control, sends Space only to Codex, and confirms the state change rather than relying on `Ctrl+Shift+D`.
-
-The opt-in live test exercises the current Codex accessibility start/stop loop. It defaults to skipped, does not pass through the physical controller, and does not prove spoken transcription:
-
-```bash
-RUN_LIVE_CODEX_DICTATION_TEST=1 \
-  swift test --filter LiveCodexDictationTests/testCurrentCodexDictationRoundTrip
-```
-
-Supported mappings, verified hardware evidence, permission steps, and known gaps are documented in [the macOS guide](docs/macos.md).
+The setup command is idempotent and gives local rebuilds a stable TCC identity. The build script stages and locally signs `dist/AgentControllerMac.app`; the preview is not Developer ID-signed or notarized. LT holds the user-configured Right Option Doubao voice shortcut; X posts Return only while Codex is foreground. Both require event-posting permission; LT also requires Accessibility plus a microphone available to Doubao/Codex. Supported mappings and physical acceptance steps are documented in [the macOS guide](docs/macos.md).
 
 #### Windows v0.7
 

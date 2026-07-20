@@ -27,9 +27,5 @@ let package = Package(
             name: "AgentControllerPlatformTests",
             dependencies: ["AgentControllerPlatform"]
         ),
-        .testTarget(
-            name: "AgentControllerMacTests",
-            dependencies: ["AgentControllerMac"]
-        )
     ]
 )
